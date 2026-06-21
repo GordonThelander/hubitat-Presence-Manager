@@ -1,0 +1,36 @@
+{
+  "packageName": "Presence Manager",
+  "author": "Gordon Thelander",
+  "version": "B4.0",
+  "minimumHEVersion": "2.3.0",
+  "dateReleased": "2026-06-21",
+  "documentationLink": "https://github.com/GordonThelander/hubitat-Presence-Manager",
+  "communityLink": "https://community.hubitat.com/",
+  "apps": [
+    {
+      "id": "presence-manager-app",
+      "name": "Presence Manager",
+      "namespace": "Hubitat Integrations",
+      "location": "https://raw.githubusercontent.com/GordonThelander/hubitat-Presence-Manager/main/apps/Presence_Manager.groovy",
+      "required": true,
+      "oauth": false,
+      "primary": true
+    }
+  ],
+  "drivers": [
+    {
+      "id": "presence-manager-output-driver",
+      "name": "Presence Manager Output",
+      "namespace": "Hubitat Integrations",
+      "location": "https://raw.githubusercontent.com/GordonThelander/hubitat-Presence-Manager/main/drivers/Presence_Manager_Output.groovy",
+      "required": true
+    },
+    {
+      "id": "presence-manager-guest-mode-switch-driver",
+      "name": "Presence Manager Guest Mode Switch",
+      "namespace": "Hubitat Integrations",
+      "location": "https://raw.githubusercontent.com/GordonThelander/hubitat-Presence-Manager/main/drivers/Presence_Manager_Guest_Mode_Switch.groovy",
+      "required": true
+    }
+  ]
+}
