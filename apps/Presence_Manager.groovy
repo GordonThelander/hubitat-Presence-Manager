@@ -1,8 +1,13 @@
 /*
  * Presence Manager
  * Namespace: Hubitat Integrations
- * Version: B4.0
- * Release: Broader beta package based on the B3.1.42.3 functional baseline.
+ * Version: 4.1
+ * Release: Fixes Activity Report per-user misattribution. Based on the B4.0 broader beta baseline (B3.1.42.3 functional baseline).
+ * 4.1 fixes: Activity Report per-user status could be misattributed to the
+ * wrong person after deletePerson() shifted a later person into a deleted
+ * slot, because atomicState.personStatusSnapshot stayed keyed to the old
+ * index. Also hardened addHistory() so two people sharing a display name
+ * cannot suppress each other's Home/Departed report rows.
  *
  * Purpose:
  * - Aggregate household presence from named people, Hubitat mobile geolocation presence devices, phone IP checks, Third Party Services switches and Guest Mode.
@@ -1972,6 +1977,7 @@ void deletePerson(Integer index) {
     for (int i = index; i < count; i++) {
         copyPersonSettings(i + 1, i)
     }
+    shiftPersonStatusSnapshotOnDelete(index, count)
 
     clearPersonSettings(count)
     app.updateSetting("personCount", [type: "enum", value: (count - 1).toString()])
@@ -1997,6 +2003,23 @@ void copyPersonSettings(Integer fromIndex, Integer toIndex) {
     }
 
     clearEditPersonSettings(toIndex)
+}
+
+// Keep atomicState.personStatusSnapshot (keyed by "person<index>") aligned with the
+// same index shift copyPersonSettings() performs above. Without this, the person that
+// slides into a deleted slot inherits the deleted/shifted predecessor's stale
+// reportedStatus / candidateStatus, causing the Activity Report to log a phantom
+// Home/Departed transition for the wrong person on the next evaluation.
+void shiftPersonStatusSnapshotOnDelete(Integer deletedIndex, Integer countBeforeDelete) {
+    Map snapshot = (atomicState.personStatusSnapshot ?: [:]) as Map
+    for (int i = deletedIndex; i < countBeforeDelete; i++) {
+        String fromKey = "person${i + 1}"
+        String toKey = "person${i}"
+        if (snapshot.containsKey(fromKey)) snapshot[toKey] = snapshot[fromKey]
+        else snapshot.remove(toKey)
+    }
+    snapshot.remove("person${countBeforeDelete}")
+    atomicState.personStatusSnapshot = snapshot
 }
 
 void clearPersonSettings(Integer index) {
@@ -2947,7 +2970,7 @@ void recordUserStatusChanges(Map result) {
 
         if (!reportedStatus) {
             reportedStatus = liveStatus
-            addHistory("user status", "${name}: ${reportedStatus}")
+            addHistory("user status", "${name}: ${reportedStatus}", key)
             candidateStatus = ""
             candidateSinceMs = 0L
         } else if (reportedStatus != liveStatus) {
@@ -2955,7 +2978,7 @@ void recordUserStatusChanges(Map result) {
                 reportedStatus = "Home"
                 candidateStatus = ""
                 candidateSinceMs = 0L
-                addHistory("user status", "${name}: Home")
+                addHistory("user status", "${name}: Home", key)
             } else {
                 if (candidateStatus != "Departed") {
                     candidateStatus = "Departed"
@@ -2967,7 +2990,7 @@ void recordUserStatusChanges(Map result) {
                     reportedStatus = "Departed"
                     candidateStatus = ""
                     candidateSinceMs = 0L
-                    addHistory("user status", "${name}: Departed")
+                    addHistory("user status", "${name}: Departed", key)
                 }
             }
         } else {
@@ -3020,7 +3043,7 @@ void recordThirdPartyStatusChanges(Map result) {
         next[key] = [name: name, status: status]
 
         if (!priorStatus || priorStatus != status) {
-            addHistory("third party status", "${name}: ${status}")
+            addHistory("third party status", "${name}: ${status}", key)
         }
     }
 
@@ -3280,16 +3303,25 @@ String historyHtml() {
     return out
 }
 
-void addHistory(String type, String message) {
+// dedupeKey identifies the reporting entity (e.g. "person2", a third-party device
+// key) behind a row. Two different entities that happen to render identical
+// type+message text (for example two people sharing a display name) must not
+// suppress each other's real Home/Departed transition, so the adjacent-duplicate
+// check below also requires the dedupeKey to match. Callers that do not pass one
+// keep the original text-only behaviour.
+void addHistory(String type, String message, String dedupeKey = null) {
     String safeType = safeMessage(type)
     String safeMsg = safeMessage(message)
     if (!isReportableHistoryRow([type: safeType, message: safeMsg])) return
 
+    String key = (dedupeKey?.toString()?.trim()) ? safeMessage(dedupeKey.toString()) : safeMsg
+
     List history = (atomicState.history ?: []) as List
     Map latest = history ? (history[0] as Map) : [:]
-    if ((latest.type ?: "") == safeType && (latest.message ?: "") == safeMsg) return
+    String latestKey = (latest.containsKey("dedupeKey") ? latest.dedupeKey : latest.message ?: "").toString()
+    if ((latest.type ?: "") == safeType && (latest.message ?: "") == safeMsg && latestKey == key) return
 
-    history.add(0, [time: timestamp(), type: safeType, message: safeMsg])
+    history.add(0, [time: timestamp(), type: safeType, message: safeMsg, dedupeKey: key])
     atomicState.history = history.take(historyLimitValue())
 }
 

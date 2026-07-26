@@ -1,6 +1,6 @@
 # Presence Manager
 
-**B4.0 Beta - Hubitat Elevation household occupancy manager**
+**4.1 Beta - Hubitat Elevation household occupancy manager**
 
 Presence Manager combines multiple presence signals into one reliable household status for Hubitat. It is designed to avoid a false `Away` result when one phone, integration or network check briefly drops out while other evidence still shows someone is home.
 
@@ -44,9 +44,9 @@ Presence Manager is **fast to Home and conservative to Away**:
 
 Once this repository is published, install through Hubitat Package Manager using the repository's `packageManifest.json`, or use Hubitat's manual code installation flow.
 
-## B4.0 beta scope
+## 4.1 beta scope
 
-B4.0 is the first broader beta package. It carries forward the B3.1.42.3 functional baseline, including mobile control layout corrections and immediate manual-refresh LAN status reporting. This release changes the packaging and version alignment only - it does not deliberately change the presence decision logic.
+4.1 fixes an Activity Report defect: deleting a person could leave the report keyed to the person that slid into the deleted slot's old data, so it could log a Home/Departed transition for the wrong person. It also hardens the report so two people sharing a display name cannot suppress each other's status rows. It carries forward the B4.0 broader beta package (based on the B3.1.42.3 functional baseline), including mobile control layout corrections and immediate manual-refresh LAN status reporting. It does not otherwise change the presence decision logic.
 
 ## Beta testing notes
 

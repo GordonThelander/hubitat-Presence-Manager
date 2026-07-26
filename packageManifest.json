@@ -1,9 +1,9 @@
 {
   "packageName": "Presence Manager",
   "author": "Gordon Thelander",
-  "version": "B4.0",
+  "version": "4.1",
   "minimumHEVersion": "2.3.0",
-  "dateReleased": "2026-06-21",
+  "dateReleased": "2026-07-27",
   "documentationLink": "https://github.com/GordonThelander/hubitat-Presence-Manager",
   "communityLink": "https://community.hubitat.com/",
   "apps": [
