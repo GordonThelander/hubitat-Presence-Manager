@@ -1,13 +1,22 @@
 /*
  * Presence Manager
  * Namespace: Hubitat Integrations
- * Version: 4.1
- * Release: Fixes Activity Report per-user misattribution. Based on the B4.0 broader beta baseline (B3.1.42.3 functional baseline).
- * 4.1 fixes: Activity Report per-user status could be misattributed to the
+ * Version: 4.2
+ * Release: Config-page consistency and cleanup pass on top of 4.1. Based on the B4.0 broader beta baseline (B3.1.42.3 functional baseline).
+ * 4.1 fixed: Activity Report per-user status could be misattributed to the
  * wrong person after deletePerson() shifted a later person into a deleted
  * slot, because atomicState.personStatusSnapshot stayed keyed to the old
  * index. Also hardened addHistory() so two people sharing a display name
  * cannot suppress each other's Home/Departed report rows.
+ * 4.2 fixes: configPage() only showed the "main status switch is ready"
+ * confirmation when outputMode was "child", hiding it for the "existing" and
+ * "presence" assignment modes, because the switch-assignment block had been
+ * copy-pasted across mainPage/configPage/advancedConfigPage and drifted.
+ * That block is now a single shared method used by all three pages. Also:
+ * the "Last 500 report events" labels now reflect the configurable retention
+ * setting instead of a hardcoded 500, removed the dead historyHtml() method,
+ * documented the unreachable "mixed evidence" fallback in evaluateOccupancy(),
+ * and the per-person Save button now shows its own index.
  *
  * Purpose:
  * - Aggregate household presence from named people, Hubitat mobile geolocation presence devices, phone IP checks, Third Party Services switches and Guest Mode.
@@ -162,48 +171,8 @@ def mainPage(params = null) {
         if (!masterPresenceStatusConfigured()) {
             section("<b>Application Child Switch Configuration</b>") {
                 paragraph "<span style='color:red;'>Please choose the name of your main presence switch* before configuring individual users, etc.</span>"
-
-                input "outputMode", "enum",
-                    title: "Main status switch assignment",
-                    options: [
-                        "child":"Create / use the application main child switch",
-                        "existing":"Assign main status to an existing switch",
-                        "presence":"Assign main status to an existing writable presence / aggregator device"
-                    ],
-                    defaultValue: "child",
-                    required: true,
-                    submitOnChange: true
-
-                String selectedOutputMode = (outputMode ?: "child").toString()
-                if (selectedOutputMode == "existing") {
-                    input "outputSwitch", "capability.switch",
-                        title: "Existing switch to use as the main status target",
-                        description: "on = Home, off = Away. Use this when you want Presence Manager to drive an existing virtual switch.",
-                        multiple: false,
-                        required: true,
-                        submitOnChange: true
-                } else if (selectedOutputMode == "presence") {
-                    input "outputPresenceDevice", "capability.presenceSensor",
-                        title: "Existing writable presence / aggregation device to use as the main status target",
-                        description: "The target must expose writable commands such as on/off, markPresent/markAway, arrived/departed or present/notPresent. A read-only presence sensor cannot be driven.",
-                        multiple: false,
-                        required: true,
-                        submitOnChange: true
-                } else {
-                    input "childDeviceName", "text",
-                        title: "<b>Application main child switch name</b>",
-                        defaultValue: "Presence Manager Main Status",
-                        required: true,
-                        submitOnChange: true
-                }
-
-                paragraph "<b>Application Guest Mode child switch name</b><br/>${html(configuredGuestModeChildName())}"
-
-                input "createChildBtn", "button", title: "Save / update application switch configuration", submitOnChange: true
-
-                if (masterPresenceStatusConfigured()) {
-                    paragraph "<span style='color:green;font-weight:bold;'>Application main status switch is ready.</span>"
-                }
+                outputSwitchAssignmentInputs()
+                if (masterPresenceStatusConfigured()) outputSwitchReadyStatusHtml(false)
             }
         } else {
             section("") {
@@ -250,11 +219,61 @@ def mainPage(params = null) {
 
             section("<b>Navigation</b>") {
                 href(name: "peopleConfigLink", title: "Manage Users", description: "Add, edit or delete users.", page: "peoplePage")
-                href(name: "activityReportLink", title: "Activity Report", description: "Last 500 report events.", page: "activityReportPage")
+                href(name: "activityReportLink", title: "Activity Report", description: "Last ${historyLimitValue()} report events.", page: "activityReportPage")
                 href(name: "advancedConfigLink", title: "Advanced Configuration", description: "Third Party Services, weighting, IP and diagnostics.", page: "advancedConfigPage")
             }
         }
     }
+}
+
+// Shared main-status-switch assignment inputs used by mainPage's initial setup gate,
+// configPage and advancedConfigPage, so the three pages cannot drift out of sync again.
+void outputSwitchAssignmentInputs() {
+    input "outputMode", "enum",
+        title: "Main status switch assignment",
+        options: [
+            "child":"Create / use the application main child switch",
+            "existing":"Assign main status to an existing switch",
+            "presence":"Assign main status to an existing writable presence / aggregator device"
+        ],
+        defaultValue: "child",
+        required: true,
+        submitOnChange: true
+
+    String selectedOutputMode = (outputMode ?: "child").toString()
+    if (selectedOutputMode == "existing") {
+        input "outputSwitch", "capability.switch",
+            title: "Existing switch to use as the main status target",
+            description: "on = Home, off = Away. Use this when you want Presence Manager to drive an existing virtual switch.",
+            multiple: false,
+            required: true,
+            submitOnChange: true
+    } else if (selectedOutputMode == "presence") {
+        input "outputPresenceDevice", "capability.presenceSensor",
+            title: "Existing writable presence / aggregation device to use as the main status target",
+            description: "The target must expose writable commands such as on/off, markPresent/markAway, arrived/departed or present/notPresent. A read-only presence sensor cannot be driven.",
+            multiple: false,
+            required: true,
+            submitOnChange: true
+    } else {
+        input "childDeviceName", "text",
+            title: "<b>Application main child switch name</b>",
+            defaultValue: "Presence Manager Main Status",
+            required: true,
+            submitOnChange: true
+    }
+
+    paragraph "<b>Application Guest Mode child switch name</b><br/>${html(configuredGuestModeChildName())}"
+    input "createChildBtn", "button", title: "Save / update application switch configuration", submitOnChange: true
+}
+
+// Shared "ready" confirmation shown once the main status switch is configured.
+// masterPresenceStatusConfigured() is true for all three assignment modes (child,
+// existing, presence), so this must not be gated on outputMode == "child" the way
+// configPage used to be - that hid the ready message for the other two modes.
+void outputSwitchReadyStatusHtml(Boolean includeGuestSwitchStatus) {
+    paragraph "<span style='color:green;font-weight:bold;'>Application main status switch is ready.</span>"
+    if (includeGuestSwitchStatus) paragraph guestSwitchCreatedHtml()
 }
 
 String uniformButtonWidthCssHtml() {
@@ -320,47 +339,10 @@ def configPage(params = null) {
             paragraph "This page controls the two app-level switches: the main household status target and the Guest Mode child switch."
             paragraph applicationChildSwitchSummaryHtml()
 
-            input "outputMode", "enum",
-                title: "Main status switch assignment",
-                options: [
-                    "child":"Create / use the application main child switch",
-                    "existing":"Assign main status to an existing switch",
-                    "presence":"Assign main status to an existing writable presence / aggregator device"
-                ],
-                defaultValue: "child",
-                required: true,
-                submitOnChange: true
-
-            String selectedOutputMode = (outputMode ?: "child").toString()
-            if (selectedOutputMode == "existing") {
-                input "outputSwitch", "capability.switch",
-                    title: "Existing switch to use as the main status target",
-                    description: "on = Home, off = Away. Use this when you want Presence Manager to drive an existing virtual switch.",
-                    multiple: false,
-                    required: true,
-                    submitOnChange: true
-            } else if (selectedOutputMode == "presence") {
-                input "outputPresenceDevice", "capability.presenceSensor",
-                    title: "Existing writable presence / aggregation device to use as the main status target",
-                    description: "The target must expose writable commands such as on/off, markPresent/markAway, arrived/departed or present/notPresent. A read-only presence sensor cannot be driven.",
-                    multiple: false,
-                    required: true,
-                    submitOnChange: true
-            } else {
-                input "childDeviceName", "text",
-                    title: "<b>Application main child switch name</b>",
-                    defaultValue: "Presence Manager Main Status",
-                    required: true,
-                    submitOnChange: true
-            }
-
-            paragraph "<b>Application Guest Mode child switch name</b><br/>${html(configuredGuestModeChildName())}"
-
-            input "createChildBtn", "button", title: "Save / update application switch configuration", submitOnChange: true
+            outputSwitchAssignmentInputs()
 
             if (masterPresenceStatusConfigured()) {
-                if (selectedOutputMode == "child") paragraph "<span style='color:green;font-weight:bold;'>Application main status switch is ready.</span>"
-                paragraph guestSwitchCreatedHtml()
+                outputSwitchReadyStatusHtml(true)
             } else {
                 paragraph "<span style='color:red;font-weight:bold;'>Configure the application main status switch before configuring users, services, Guest Mode or advanced behaviour.</span>"
             }
@@ -379,7 +361,7 @@ def activityReportPage(params = null) {
             input "clearHistoryBtn", "button", title: "Clear Activity Report", submitOnChange: true
         }
 
-        section("<b>Last 500 report events</b>") {
+        section("<b>Last ${historyLimitValue()} report events</b>") {
             paragraph activityReportHtml()
         }
     }
@@ -391,54 +373,17 @@ def advancedConfigPage(params = null) {
         section("<b>Navigation</b>") {
             href(name: "mainPageLinkFromAdvanced", title: "Back to status dashboard", description: "Return to the operational dashboard.", page: "mainPage")
             href(name: "peoplePageLinkFromAdvanced", title: "Manage Users", description: "Open User Configuration.", page: "peoplePage")
-            href(name: "activityPageLinkFromAdvanced", title: "Activity Report", description: "Last 500 report events.", page: "activityReportPage")
+            href(name: "activityPageLinkFromAdvanced", title: "Activity Report", description: "Last ${historyLimitValue()} report events.", page: "activityReportPage")
         }
 
         section("<b>Application Child Switch Configuration</b>") {
             paragraph "This page controls the two app-level switches: the main household status target and the Guest Mode child switch. Keep it available here for recovery if either switch is renamed, replaced or deleted."
             paragraph applicationChildSwitchSummaryHtml()
 
-            input "outputMode", "enum",
-                title: "Main status switch assignment",
-                options: [
-                    "child":"Create / use the application main child switch",
-                    "existing":"Assign main status to an existing switch",
-                    "presence":"Assign main status to an existing writable presence / aggregator device"
-                ],
-                defaultValue: "child",
-                required: true,
-                submitOnChange: true
-
-            String selectedOutputMode = (outputMode ?: "child").toString()
-            if (selectedOutputMode == "existing") {
-                input "outputSwitch", "capability.switch",
-                    title: "Existing switch to use as the main status target",
-                    description: "on = Home, off = Away. Use this when you want Presence Manager to drive an existing virtual switch.",
-                    multiple: false,
-                    required: true,
-                    submitOnChange: true
-            } else if (selectedOutputMode == "presence") {
-                input "outputPresenceDevice", "capability.presenceSensor",
-                    title: "Existing writable presence / aggregation device to use as the main status target",
-                    description: "The target must expose writable commands such as on/off, markPresent/markAway, arrived/departed or present/notPresent. A read-only presence sensor cannot be driven.",
-                    multiple: false,
-                    required: true,
-                    submitOnChange: true
-            } else {
-                input "childDeviceName", "text",
-                    title: "<b>Application main child switch name</b>",
-                    defaultValue: "Presence Manager Main Status",
-                    required: true,
-                    submitOnChange: true
-            }
-
-            paragraph "<b>Application Guest Mode child switch name</b><br/>${html(configuredGuestModeChildName())}"
-
-            input "createChildBtn", "button", title: "Save / update application switch configuration", submitOnChange: true
+            outputSwitchAssignmentInputs()
 
             if (masterPresenceStatusConfigured()) {
-                paragraph "<span style='color:green;font-weight:bold;'>Application main status switch is ready.</span>"
-                paragraph guestSwitchCreatedHtml()
+                outputSwitchReadyStatusHtml(true)
                 input "evaluateNowBtn", "button", title: "Evaluate now", submitOnChange: true
             } else {
                 paragraph "<span style='color:red;font-weight:bold;'>Configure the application main status switch before configuring advanced behaviour.</span>"
@@ -1141,6 +1086,11 @@ void evaluateOccupancy(String reason = "evaluation", Boolean manualSingleSweepIp
         return
     }
 
+    // Defensive fallback only: with the current evaluateAllEvidence() formulas,
+    // result.occupied and result.allAbsent are exact complements of each other
+    // (occupied == false always implies allAbsent == true), so this branch cannot
+    // currently be reached. Left in place in case a future change to the evidence
+    // model introduces a genuine "mixed" state, rather than falling through silently.
     atomicState.pendingAction = ""
     atomicState.lastDecision = "Holding previous state - ${reason}; ${result.summary}"
     addHistory("hold", atomicState.lastDecision)
@@ -1794,7 +1744,7 @@ String configuredMasterPresenceStatusNameForGuestMode() {
 Integer maxPeople() { return 10 }
 
 String personSaveButtonLabel(Integer index) {
-    return "Save Person"
+    return "Save Person ${index}"
 }
 
 Integer personSaveIndexFromButton(String btn) {
@@ -3070,13 +3020,13 @@ String activityReportHtml() {
     out += "<div class='pm-desktop'><div class='pm-table-wrap'>"
     out += "<table class='pm-table'>"
     out += headerRowFixed(["Time", "Event", "Detail"], ["22%", "18%", "60%"])
-    history.take(500).each { Map row ->
+    history.take(historyLimitValue()).each { Map row ->
         out += dataRowFixed([html(row.time ?: ""), historyTypeLabel(row.type), html(row.message ?: "")], ["22%", "18%", "60%"])
     }
     out += "</table></div></div>"
 
     out += "<div class='pm-mobile'>"
-    history.take(500).each { Map row ->
+    history.take(historyLimitValue()).each { Map row ->
         out += "<div class='pm-event-card'>"
         out += "<div class='pm-event-time'>${html(row.time ?: '')}</div>"
         out += "<div class='pm-event-type'>${historyTypeLabel(row.type)}</div>"
@@ -3287,19 +3237,6 @@ String dataRowFixed(List cols, List widths) {
         out += "<td style='border:1px solid #ddd;padding:4px;vertical-align:top${widthStyle}'>${cols[i] == null ? '' : cols[i]}</td>"
     }
     out += "</tr>"
-    return out
-}
-
-String historyHtml() {
-    List history = reportableHistoryRows((atomicState.history ?: []) as List)
-    if (!history) return "No report events recorded yet."
-
-    String out = "<table style='border-collapse:collapse;width:100%'>"
-    out += headerRow(["Time", "Event", "Detail"])
-    history.take(historyLimitValue()).each { Map row ->
-        out += dataRow([html(row.time ?: ""), historyTypeLabel(row.type), html(row.message ?: "")])
-    }
-    out += "</table>"
     return out
 }
 

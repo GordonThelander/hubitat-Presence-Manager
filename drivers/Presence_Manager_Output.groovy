@@ -1,7 +1,7 @@
 /*
  * Presence Manager Output
  * Namespace: Hubitat Integrations
- * Version: 4.1
+ * Version: 4.2
  * Release: Broader beta package.
  *
  * Child driver for the Presence Manager application main status output.
