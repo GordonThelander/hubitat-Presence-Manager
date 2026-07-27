@@ -1,8 +1,8 @@
 /*
  * Presence Manager
  * Namespace: Hubitat Integrations
- * Version: 4.3.2
- * Release: Fixes Presence Report getting permanently stuck at 00:00 for a Home person after Clear Activity Report, or after their anchor row ages out of retention. Based on the B4.0 broader beta baseline (B3.1.42.3 functional baseline).
+ * Version: 4.3.3
+ * Release: Presence Report now trims trailing untracked days instead of padding out to 30 rows. Based on the B4.0 broader beta baseline (B3.1.42.3 functional baseline).
  * 4.1 fixed: Activity Report per-user status could be misattributed to the
  * wrong person after deletePerson() shifted a later person into a deleted
  * slot, because atomicState.personStatusSnapshot stayed keyed to the old
@@ -36,6 +36,13 @@
  * Home at clear time, and presenceReportHtml() also self-heals the same
  * gap on render (covers the same failure mode if an anchor row instead
  * ages out of the retention cap naturally over time, with no clear involved).
+ * 4.3.3 changes: the report no longer always renders all 30 rows. It now
+ * drops the trailing run of days where nobody has any recorded time at all
+ * (e.g. before this instance existed or these people were configured), and
+ * only shows today plus however many days actually have data. A genuine
+ * 00:00 day sandwiched between days that do have data is still shown -
+ * that's real information, not padding. The total row's day count reflects
+ * whatever's actually visible instead of a fixed "30 days".
  *
  * Purpose:
  * - Aggregate household presence from named people, Hubitat mobile geolocation presence devices, phone IP checks, Third Party Services switches and Guest Mode.
@@ -3182,7 +3189,6 @@ String presenceReportHtml() {
     Map snapshot = (atomicState.personStatusSnapshot ?: [:]) as Map
 
     Map<String, List<Map>> intervalsByKey = [:]
-    Map<String, Long> totalsByKey = [:]
     people.each { Map p ->
         String key = "person${p.index}"
         List<Map> intervals = personHomeIntervalsMs(key)
@@ -3202,32 +3208,56 @@ String presenceReportHtml() {
         }
 
         intervalsByKey[key] = intervals
-        totalsByKey[key] = 0L
     }
 
+    // Build every day bucket first, then drop the trailing run of days where nobody
+    // has any recorded time at all (e.g. before this instance existed, or before
+    // these people were configured), rather than always rendering the full window
+    // padded out with rows nothing can ever fill in. A genuine 00:00 day that falls
+    // *within* the tracked range (sandwiched between days that do have data) is kept
+    // - that's real information, not padding. Today is always kept even if empty.
     List<Map> dayRows = []
     for (int daysAgo = 0; daysAgo < dayCount; daysAgo++) {
         Long dayStart = presenceReportDayStartMs(daysAgo)
         Long dayEnd = (daysAgo == 0) ? nowMs : (dayStart + (24L * 60L * 60L * 1000L))
-        Map<String, String> values = [:]
+        Map<String, Long> msValues = [:]
+        Boolean hasData = false
         people.each { Map p ->
             String key = "person${p.index}"
             Long ms = overlapMs(intervalsByKey[key], dayStart, dayEnd)
-            totalsByKey[key] = (totalsByKey[key] ?: 0L) + ms
-            values[key] = formatHoursMinutes(ms)
+            msValues[key] = ms
+            if (ms > 0L) hasData = true
         }
         String label = presenceReportDayLabel(dayStart) + (daysAgo == 0 ? " (today, so far)" : "")
-        dayRows << [label: label, values: values]
+        dayRows << [label: label, msValues: msValues, hasData: hasData]
+    }
+
+    Integer lastDataIndex = -1
+    for (int i = dayRows.size() - 1; i >= 0; i--) {
+        if ((dayRows[i] as Map).hasData == true) { lastDataIndex = i; break }
+    }
+    List<Map> visibleRows = lastDataIndex >= 0 ? dayRows.subList(0, lastDataIndex + 1) : [dayRows[0]]
+
+    Map<String, Long> totalsByKey = [:]
+    people.each { Map p -> totalsByKey["person${p.index}"] = 0L }
+    visibleRows.each { Map row ->
+        Map<String, Long> msValues = row.msValues as Map
+        people.each { Map p ->
+            String key = "person${p.index}"
+            totalsByKey[key] = (totalsByKey[key] ?: 0L) + ((msValues[key] ?: 0L) as Long)
+        }
     }
 
     String out = responsiveUiCssHtml()
     out += "<div class='pm-table-wrap'>"
     out += "<table class='pm-scroll-table'>"
     out += "<tr><th class='pm-date-col'>Date</th>" + people.collect { Map p -> "<th class='pm-hours-col'>${html(p.name ?: '')}</th>" }.join("") + "</tr>"
-    dayRows.each { Map row ->
-        out += "<tr><td class='pm-date-col'>${html(row.label)}</td>" + people.collect { Map p -> "<td class='pm-hours-col'>${html((row.values as Map)["person${p.index}"] ?: '00:00')}</td>" }.join("") + "</tr>"
+    visibleRows.each { Map row ->
+        Map<String, Long> msValues = row.msValues as Map
+        out += "<tr><td class='pm-date-col'>${html(row.label)}</td>" + people.collect { Map p -> "<td class='pm-hours-col'>${html(formatHoursMinutes((msValues["person${p.index}"] ?: 0L) as Long))}</td>" }.join("") + "</tr>"
     }
-    out += "<tr class='pm-total-row'><td class='pm-date-col'>Total (${dayCount} days)</td>" + people.collect { Map p -> "<td class='pm-hours-col'>${html(formatHoursMinutes(totalsByKey["person${p.index}"] ?: 0L))}</td>" }.join("") + "</tr>"
+    String totalLabel = "Total (${visibleRows.size()} day${visibleRows.size() == 1 ? '' : 's'})"
+    out += "<tr class='pm-total-row'><td class='pm-date-col'>${totalLabel}</td>" + people.collect { Map p -> "<td class='pm-hours-col'>${html(formatHoursMinutes(totalsByKey["person${p.index}"] ?: 0L))}</td>" }.join("") + "</tr>"
     out += "</table>"
     out += "</div>"
     return out

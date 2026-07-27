@@ -1,6 +1,6 @@
 # Presence Manager
 
-**4.3.2 Beta - Hubitat Elevation household occupancy manager**
+**4.3.3 Beta - Hubitat Elevation household occupancy manager**
 
 Presence Manager combines multiple presence signals into one reliable household status for Hubitat. It is designed to avoid a false `Away` result when one phone, integration or network check briefly drops out while other evidence still shows someone is home.
 
@@ -44,7 +44,7 @@ Presence Manager is **fast to Home and conservative to Away**:
 
 Once this repository is published, install through Hubitat Package Manager using the repository's `packageManifest.json`, or use Hubitat's manual code installation flow.
 
-## 4.3.2 beta scope
+## 4.3.3 beta scope
 
 4.1 fixed an Activity Report defect: deleting a person could leave the report keyed to the person that slid into the deleted slot's old data, so it could log a Home/Departed transition for the wrong person. It also hardened the report so two people sharing a display name cannot suppress each other's status rows.
 
@@ -55,6 +55,8 @@ Once this repository is published, install through Hubitat Package Manager using
 4.3.1 fixes a bug in that report: anyone who had been continuously Home since before updating to 4.3 showed 00:00 indefinitely, because their only recorded Home event predated the new tracking field 4.3 introduced and was being silently skipped. Older history rows are now read via a fallback that recovers the same information from the existing display timestamp instead.
 
 4.3.2 fixes another way the same report could get stuck at 00:00: clicking Clear Activity Report wiped the one history row a currently-Home person's entry depends on, and since their status hasn't changed, nothing re-logs a replacement, leaving them stuck until their next real departure/arrival. Clearing now re-seeds a fresh Home anchor for everyone currently Home, and the report page also self-heals the same gap on render, covering the case where an anchor row instead ages out of the retention cap naturally over time with no clear involved.
+
+4.3.3 changes how the report renders: it no longer always shows all 30 rows padded out with days nobody could ever have data for (before the instance existed, or before people were configured). It now shows today plus however many days actually have recorded data, dropping the trailing run of untracked days. A genuine 00:00 day sandwiched between days that do have data is still shown, since that's real information rather than padding. The total row's day count reflects whatever's actually visible.
 
 All releases carry forward the B4.0 broader beta package (based on the B3.1.42.3 functional baseline), including mobile control layout corrections and immediate manual-refresh LAN status reporting. None deliberately change the presence decision logic.
 
