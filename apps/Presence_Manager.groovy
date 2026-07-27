@@ -1,8 +1,8 @@
 /*
  * Presence Manager
  * Namespace: Hubitat Integrations
- * Version: 4.3.1
- * Release: Fixes Presence Report showing 00:00 for already-Home people after updating to 4.3. Based on the B4.0 broader beta baseline (B3.1.42.3 functional baseline).
+ * Version: 4.3.2
+ * Release: Fixes Presence Report getting permanently stuck at 00:00 for a Home person after Clear Activity Report, or after their anchor row ages out of retention. Based on the B4.0 broader beta baseline (B3.1.42.3 functional baseline).
  * 4.1 fixed: Activity Report per-user status could be misattributed to the
  * wrong person after deletePerson() shifted a later person into a deleted
  * slot, because atomicState.personStatusSnapshot stayed keyed to the old
@@ -28,6 +28,14 @@
  * *new* Home transition to log) showed 00:00 indefinitely - their only Home
  * event on record predated timeMs entirely. Added a fallback that parses
  * the older display timestamp string for rows that don't have timeMs.
+ * 4.3.2 fixes: clicking Clear Activity Report wiped the one history row a
+ * currently-Home person's report entry depends on, and since their status
+ * hasn't changed, recordUserStatusChanges() never logs a replacement -
+ * leaving them stuck at 00:00 until their next real departure/arrival.
+ * clearHistory() now re-seeds a fresh Home anchor for everyone currently
+ * Home at clear time, and presenceReportHtml() also self-heals the same
+ * gap on render (covers the same failure mode if an anchor row instead
+ * ages out of the retention cap naturally over time, with no clear involved).
  *
  * Purpose:
  * - Aggregate household presence from named people, Hubitat mobile geolocation presence devices, phone IP checks, Third Party Services switches and Guest Mode.
@@ -3171,12 +3179,29 @@ String presenceReportHtml() {
 
     Integer dayCount = presenceReportDayCount()
     Long nowMs = now()
+    Map snapshot = (atomicState.personStatusSnapshot ?: [:]) as Map
 
     Map<String, List<Map>> intervalsByKey = [:]
     Map<String, Long> totalsByKey = [:]
     people.each { Map p ->
         String key = "person${p.index}"
-        intervalsByKey[key] = personHomeIntervalsMs(key)
+        List<Map> intervals = personHomeIntervalsMs(key)
+
+        // Self-heal: if this person is definitely Home right now (per the live
+        // snapshot) but nothing in their reconstructed intervals actually covers
+        // "now" - either history was cleared, or their anchor row aged out of the
+        // retention cap over time - re-seed a fresh anchor so this gap can't persist
+        // indefinitely. Doesn't fabricate any past hours: the synthetic interval is
+        // zero-width, it only gives future renders something real to build on.
+        def entry = snapshot[key]
+        String liveStatus = (entry instanceof Map) ? (entry.status ?: entry.reportedStatus ?: "").toString() : ""
+        Boolean hasOpenNow = intervals.any { (it.end as Long) >= (nowMs - 5000L) }
+        if (liveStatus == "Home" && !hasOpenNow) {
+            addHistory("user status", "${p.name}: Home", key)
+            intervals = intervals + [[start: nowMs, end: nowMs]]
+        }
+
+        intervalsByKey[key] = intervals
         totalsByKey[key] = 0L
     }
 
@@ -3485,8 +3510,21 @@ String historyTypeLabel(String type) {
     return html(type ?: "")
 }
 
+// Clearing history wipes the one thing the Presence Report relies on to know how
+// long a currently-Home person has been home: their last logged "Home" transition.
+// If nothing changes their status afterward, recordUserStatusChanges() never logs
+// anything new for them (it only fires on an actual change), so the report would
+// show 00:00 for them indefinitely. Re-seed a fresh "Home" anchor immediately for
+// everyone currently Home so the report has something to build on going forward.
 void clearHistory() {
     atomicState.history = []
+    Map snapshot = (atomicState.personStatusSnapshot ?: [:]) as Map
+    personProfiles().each { Map p ->
+        String key = "person${p.index}"
+        def entry = snapshot[key]
+        String status = (entry instanceof Map) ? (entry.status ?: entry.reportedStatus ?: "").toString() : ""
+        if (status == "Home") addHistory("user status", "${p.name}: Home", key)
+    }
 }
 
 Integer historyLimitValue() {

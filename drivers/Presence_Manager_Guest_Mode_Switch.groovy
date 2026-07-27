@@ -1,7 +1,7 @@
 /*
  * Presence Manager Guest Mode Switch
  * Namespace: Hubitat Integrations
- * Version: 4.3.1
+ * Version: 4.3.2
  * Release: Broader beta package.
  *
  * Child switch used by Presence Manager to enable or disable Guest Mode.
