@@ -1,8 +1,8 @@
 /*
  * Presence Manager
  * Namespace: Hubitat Integrations
- * Version: 4.3
- * Release: Adds the Presence Report page on top of 4.2. Based on the B4.0 broader beta baseline (B3.1.42.3 functional baseline).
+ * Version: 4.3.1
+ * Release: Fixes Presence Report showing 00:00 for already-Home people after updating to 4.3. Based on the B4.0 broader beta baseline (B3.1.42.3 functional baseline).
  * 4.1 fixed: Activity Report per-user status could be misattributed to the
  * wrong person after deletePerson() shifted a later person into a deleted
  * slot, because atomicState.personStatusSnapshot stayed keyed to the old
@@ -23,6 +23,11 @@
  * existing Activity Report "user status" entries; addHistory() now also
  * stores a timeMs epoch value on every row so durations don't need to be
  * parsed back out of the display timestamp string.
+ * 4.3.1 fixes: personHomeIntervalsMs() required timeMs on every row, so
+ * anyone who had been continuously Home since before updating to 4.3 (no
+ * *new* Home transition to log) showed 00:00 indefinitely - their only Home
+ * event on record predated timeMs entirely. Added a fallback that parses
+ * the older display timestamp string for rows that don't have timeMs.
  *
  * Purpose:
  * - Aggregate household presence from named people, Hubitat mobile geolocation presence devices, phone IP checks, Third Party Services switches and Guest Mode.
@@ -3088,6 +3093,28 @@ String presenceReportDayLabel(Long dayStartMsValue) {
     return new Date(dayStartMsValue).format("yyyy-MM-dd", location.timeZone)
 }
 
+// Rows written before the 4.3 timeMs field existed only have the display "time"
+// string. Parse that back out with the same timezone timestamp() used to write it,
+// rather than dropping those rows - a person who has been continuously Home since
+// before updating to 4.3 has no *new* Home transition to log (recordUserStatusChanges
+// only fires on an actual change), so their only Home event on record may predate
+// timeMs entirely. Without this fallback the report would show 00:00 for them
+// indefinitely, until they next actually leave and come back.
+Long historyRowTimeMs(Map row) {
+    if (row.timeMs != null) {
+        try { return row.timeMs as Long } catch (Throwable ignored) { }
+    }
+    String timeText = (row.time ?: "").toString()
+    if (!timeText) return null
+    try {
+        java.text.SimpleDateFormat sdf = new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss")
+        sdf.setTimeZone(location.timeZone)
+        return sdf.parse(timeText).time
+    } catch (Throwable ignored) {
+        return null
+    }
+}
+
 // Reconstructs a person's Home intervals from their "user status" Activity Report
 // rows (added by recordUserStatusChanges, keyed by dedupeKey "person<index>"). Rows
 // from before a person was deleted and their slot reused by someone else keep the
@@ -3096,16 +3123,19 @@ String presenceReportDayLabel(Long dayStartMsValue) {
 // slot. Narrow, known limitation - not fixed here, same root cause as the
 // personStatusSnapshot reindex fixed in 4.1, just not retroactive to old rows.
 List<Map> personHomeIntervalsMs(String dedupeKey) {
-    List rows = ((atomicState.history ?: []) as List).findAll { Map row ->
-        (row.type ?: "") == "user status" && (row.dedupeKey ?: "") == dedupeKey && row.timeMs != null
-    }
-    rows = rows.sort { (it.timeMs ?: 0L) as Long }
+    List<Map> timed = ((atomicState.history ?: []) as List).findAll { Map row ->
+        (row.type ?: "") == "user status" && (row.dedupeKey ?: "") == dedupeKey
+    }.collect { Map row ->
+        [row: row, ms: historyRowTimeMs(row)]
+    }.findAll { it.ms != null }
+    timed = timed.sort { it.ms as Long }
 
     List<Map> intervals = []
     Long openStart = null
-    rows.each { Map row ->
+    timed.each { Map t ->
+        Map row = t.row as Map
         Boolean isHome = (row.message ?: "").toString().endsWith(": Home")
-        Long eventMs = (row.timeMs ?: 0L) as Long
+        Long eventMs = t.ms as Long
         if (isHome) {
             if (openStart == null) openStart = eventMs
         } else if (openStart != null) {
