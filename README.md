@@ -1,6 +1,6 @@
 # Presence Manager
 
-**4.2 Beta - Hubitat Elevation household occupancy manager**
+**4.3 Beta - Hubitat Elevation household occupancy manager**
 
 Presence Manager combines multiple presence signals into one reliable household status for Hubitat. It is designed to avoid a false `Away` result when one phone, integration or network check briefly drops out while other evidence still shows someone is home.
 
@@ -44,13 +44,15 @@ Presence Manager is **fast to Home and conservative to Away**:
 
 Once this repository is published, install through Hubitat Package Manager using the repository's `packageManifest.json`, or use Hubitat's manual code installation flow.
 
-## 4.2 beta scope
+## 4.3 beta scope
 
 4.1 fixed an Activity Report defect: deleting a person could leave the report keyed to the person that slid into the deleted slot's old data, so it could log a Home/Departed transition for the wrong person. It also hardened the report so two people sharing a display name cannot suppress each other's status rows.
 
 4.2 is a consistency and cleanup pass on top of that: the main-status-switch assignment screen (Main page setup gate, Application Child Switch Configuration page, and Advanced Configuration page) is now a single shared block instead of three copy-pasted ones, which also fixes the Application Child Switch Configuration page silently hiding its "ready" confirmation when the main status switch was assigned to an existing switch or presence device rather than the managed child switch. The "Last N report events" labels now reflect the configurable retention setting instead of a hardcoded 500, and a couple of small dead-code and clarity cleanups were made.
 
-Both releases carry forward the B4.0 broader beta package (based on the B3.1.42.3 functional baseline), including mobile control layout corrections and immediate manual-refresh LAN status reporting. Neither deliberately changes the presence decision logic.
+4.3 adds a new Presence Report page, linked from the main dashboard just below Activity Report, showing each user's hours present per calendar day over a rolling 30 day window plus a 30-day total row. It's built entirely on the existing Activity Report data, no new tracking was added. Known limitation: a report window spanning a person deletion can briefly misattribute hours to whoever takes over that slot, the same root cause as the defect fixed in 4.1, just not retroactive to already-stored history rows.
+
+All three releases carry forward the B4.0 broader beta package (based on the B3.1.42.3 functional baseline), including mobile control layout corrections and immediate manual-refresh LAN status reporting. None deliberately change the presence decision logic.
 
 ## Beta testing notes
 
