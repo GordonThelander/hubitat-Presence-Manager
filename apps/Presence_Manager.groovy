@@ -1,8 +1,8 @@
 /*
  * Presence Manager
  * Namespace: Hubitat Integrations
- * Version: 4.2
- * Release: Config-page consistency and cleanup pass on top of 4.1. Based on the B4.0 broader beta baseline (B3.1.42.3 functional baseline).
+ * Version: 4.3
+ * Release: Adds the Presence Report page on top of 4.2. Based on the B4.0 broader beta baseline (B3.1.42.3 functional baseline).
  * 4.1 fixed: Activity Report per-user status could be misattributed to the
  * wrong person after deletePerson() shifted a later person into a deleted
  * slot, because atomicState.personStatusSnapshot stayed keyed to the old
@@ -17,6 +17,12 @@
  * setting instead of a hardcoded 500, removed the dead historyHtml() method,
  * documented the unreachable "mixed evidence" fallback in evaluateOccupancy(),
  * and the per-person Save button now shows its own index.
+ * 4.3 adds: a new Presence Report page (linked from the main page, below
+ * Activity Report) showing each user's hours present per calendar day over
+ * a rolling 30 day window, plus a 30-day total row. Built on top of the
+ * existing Activity Report "user status" entries; addHistory() now also
+ * stores a timeMs epoch value on every row so durations don't need to be
+ * parsed back out of the display timestamp string.
  *
  * Purpose:
  * - Aggregate household presence from named people, Hubitat mobile geolocation presence devices, phone IP checks, Third Party Services switches and Guest Mode.
@@ -46,6 +52,7 @@ preferences {
     page(name: "configPage", title: "Application Child Switch Configuration", install: false, uninstall: false)
     page(name: "peoplePage", title: "User Configuration", install: false, uninstall: false)
     page(name: "activityReportPage", title: "Activity Report", install: false, uninstall: false)
+    page(name: "presenceReportPage", title: "Presence Report", install: false, uninstall: false)
     page(name: "advancedConfigPage", title: "Advanced Configuration", install: false, uninstall: false)
 }
 
@@ -220,6 +227,7 @@ def mainPage(params = null) {
             section("<b>Navigation</b>") {
                 href(name: "peopleConfigLink", title: "Manage Users", description: "Add, edit or delete users.", page: "peoplePage")
                 href(name: "activityReportLink", title: "Activity Report", description: "Last ${historyLimitValue()} report events.", page: "activityReportPage")
+                href(name: "presenceReportLink", title: "Presence Report", description: "Daily hours home, last ${presenceReportDayCount()} days.", page: "presenceReportPage")
                 href(name: "advancedConfigLink", title: "Advanced Configuration", description: "Third Party Services, weighting, IP and diagnostics.", page: "advancedConfigPage")
             }
         }
@@ -301,6 +309,16 @@ String responsiveUiCssHtml() {
 .pm-event-time { font-weight:bold; margin-bottom:6px; }
 .pm-event-type { color:#444; font-weight:bold; margin-bottom:4px; }
 
+/* Presence report table - deliberately does not use width:100%/table-layout:fixed like
+   .pm-table, so it can grow wider than its wrapper as people are added and actually
+   trigger the .pm-table-wrap horizontal scrollbar on narrow screens instead of just
+   squeezing columns unreadably thin. */
+.pm-scroll-table { border-collapse:collapse; }
+.pm-scroll-table th, .pm-scroll-table td { border:1px solid #ddd; padding:4px 10px; text-align:left; white-space:nowrap; }
+.pm-scroll-table th.pm-date-col, .pm-scroll-table td.pm-date-col { min-width:150px; }
+.pm-scroll-table th.pm-hours-col, .pm-scroll-table td.pm-hours-col { min-width:90px; text-align:right; }
+.pm-scroll-table tr.pm-total-row td { border-top:2px solid #444; font-weight:bold; }
+
 /* Keep only real action buttons normalised. Do not touch Hubitat card/page layout classes. */
 input[type='submit'],
 button,
@@ -363,6 +381,20 @@ def activityReportPage(params = null) {
 
         section("<b>Last ${historyLimitValue()} report events</b>") {
             paragraph activityReportHtml()
+        }
+    }
+}
+
+def presenceReportPage(params = null) {
+    initialiseState()
+    return dynamicPage(name: "presenceReportPage", title: "Presence Report", install: false, uninstall: false) {
+        section("<b>Navigation</b>") {
+            href(name: "mainPageLinkFromPresenceReport", title: "Back to status dashboard", description: "Return to the operational dashboard.", page: "mainPage")
+        }
+
+        section("<b>Rolling ${presenceReportDayCount()} day presence report</b>") {
+            paragraph "Hours each user was present, by calendar day. Today's row is a running total, not a finished day."
+            paragraph presenceReportHtml()
         }
     }
 }
@@ -3037,6 +3069,115 @@ String activityReportHtml() {
     return out
 }
 
+// ---------------- Presence report ----------------
+
+Integer presenceReportDayCount() { return 30 }
+
+Long presenceReportDayStartMs(Integer daysAgo) {
+    Calendar cal = Calendar.getInstance(location.timeZone)
+    cal.setTimeInMillis(now())
+    cal.set(Calendar.HOUR_OF_DAY, 0)
+    cal.set(Calendar.MINUTE, 0)
+    cal.set(Calendar.SECOND, 0)
+    cal.set(Calendar.MILLISECOND, 0)
+    cal.add(Calendar.DAY_OF_MONTH, -daysAgo)
+    return cal.getTimeInMillis()
+}
+
+String presenceReportDayLabel(Long dayStartMsValue) {
+    return new Date(dayStartMsValue).format("yyyy-MM-dd", location.timeZone)
+}
+
+// Reconstructs a person's Home intervals from their "user status" Activity Report
+// rows (added by recordUserStatusChanges, keyed by dedupeKey "person<index>"). Rows
+// from before a person was deleted and their slot reused by someone else keep the
+// same "person<index>" dedupeKey, so a report window spanning that deletion can
+// briefly attribute the deleted person's old hours to whoever now occupies that
+// slot. Narrow, known limitation - not fixed here, same root cause as the
+// personStatusSnapshot reindex fixed in 4.1, just not retroactive to old rows.
+List<Map> personHomeIntervalsMs(String dedupeKey) {
+    List rows = ((atomicState.history ?: []) as List).findAll { Map row ->
+        (row.type ?: "") == "user status" && (row.dedupeKey ?: "") == dedupeKey && row.timeMs != null
+    }
+    rows = rows.sort { (it.timeMs ?: 0L) as Long }
+
+    List<Map> intervals = []
+    Long openStart = null
+    rows.each { Map row ->
+        Boolean isHome = (row.message ?: "").toString().endsWith(": Home")
+        Long eventMs = (row.timeMs ?: 0L) as Long
+        if (isHome) {
+            if (openStart == null) openStart = eventMs
+        } else if (openStart != null) {
+            intervals << [start: openStart, end: eventMs]
+            openStart = null
+        }
+    }
+    if (openStart != null) intervals << [start: openStart, end: now()]
+    return intervals
+}
+
+Long overlapMs(List<Map> intervals, Long windowStart, Long windowEnd) {
+    Long total = 0L
+    intervals.each { Map iv ->
+        Long start = Math.max(iv.start as Long, windowStart)
+        Long end = Math.min(iv.end as Long, windowEnd)
+        if (end > start) total += (end - start)
+    }
+    return total
+}
+
+String formatHoursMinutes(Long totalMs) {
+    Long safeMs = (totalMs == null || totalMs < 0L) ? 0L : totalMs
+    Long totalMinutes = Math.round(safeMs / 60000.0) as Long
+    Long hours = totalMinutes.intdiv(60) as Long
+    Long minutes = totalMinutes % 60L
+    return "${hours.toString().padLeft(2, '0')}:${minutes.toString().padLeft(2, '0')}"
+}
+
+String presenceReportHtml() {
+    List<Map> people = personProfiles()
+    if (!people) return responsiveUiCssHtml() + "No users configured yet."
+
+    Integer dayCount = presenceReportDayCount()
+    Long nowMs = now()
+
+    Map<String, List<Map>> intervalsByKey = [:]
+    Map<String, Long> totalsByKey = [:]
+    people.each { Map p ->
+        String key = "person${p.index}"
+        intervalsByKey[key] = personHomeIntervalsMs(key)
+        totalsByKey[key] = 0L
+    }
+
+    List<Map> dayRows = []
+    for (int daysAgo = 0; daysAgo < dayCount; daysAgo++) {
+        Long dayStart = presenceReportDayStartMs(daysAgo)
+        Long dayEnd = (daysAgo == 0) ? nowMs : (dayStart + (24L * 60L * 60L * 1000L))
+        Map<String, String> values = [:]
+        people.each { Map p ->
+            String key = "person${p.index}"
+            Long ms = overlapMs(intervalsByKey[key], dayStart, dayEnd)
+            totalsByKey[key] = (totalsByKey[key] ?: 0L) + ms
+            values[key] = formatHoursMinutes(ms)
+        }
+        String label = presenceReportDayLabel(dayStart) + (daysAgo == 0 ? " (today, so far)" : "")
+        dayRows << [label: label, values: values]
+    }
+
+    String out = responsiveUiCssHtml()
+    out += "<div class='pm-table-wrap'>"
+    out += "<table class='pm-scroll-table'>"
+    out += "<tr><th class='pm-date-col'>Date</th>" + people.collect { Map p -> "<th class='pm-hours-col'>${html(p.name ?: '')}</th>" }.join("") + "</tr>"
+    dayRows.each { Map row ->
+        out += "<tr><td class='pm-date-col'>${html(row.label)}</td>" + people.collect { Map p -> "<td class='pm-hours-col'>${html((row.values as Map)["person${p.index}"] ?: '00:00')}</td>" }.join("") + "</tr>"
+    }
+    out += "<tr class='pm-total-row'><td class='pm-date-col'>Total (${dayCount} days)</td>" + people.collect { Map p -> "<td class='pm-hours-col'>${html(formatHoursMinutes(totalsByKey["person${p.index}"] ?: 0L))}</td>" }.join("") + "</tr>"
+    out += "</table>"
+    out += "</div>"
+    return out
+}
+
 String decisionDetailHtml() {
     Map result = evaluateAllEvidence()
     Map ipMap = (atomicState.ipStatus ?: [:]) as Map
@@ -3258,7 +3399,7 @@ void addHistory(String type, String message, String dedupeKey = null) {
     String latestKey = (latest.containsKey("dedupeKey") ? latest.dedupeKey : latest.message ?: "").toString()
     if ((latest.type ?: "") == safeType && (latest.message ?: "") == safeMsg && latestKey == key) return
 
-    history.add(0, [time: timestamp(), type: safeType, message: safeMsg, dedupeKey: key])
+    history.add(0, [time: timestamp(), timeMs: now(), type: safeType, message: safeMsg, dedupeKey: key])
     atomicState.history = history.take(historyLimitValue())
 }
 
