@@ -1,8 +1,8 @@
 /*
  * Presence Manager
  * Namespace: Hubitat Integrations
- * Version: 4.3.3
- * Release: Presence Report now trims trailing untracked days instead of padding out to 30 rows. Based on the B4.0 broader beta baseline (B3.1.42.3 functional baseline).
+ * Version: 4.3.4
+ * Release: Presence Report values now round to the nearest 15 minutes, with an updated description. Based on the B4.0 broader beta baseline (B3.1.42.3 functional baseline).
  * 4.1 fixed: Activity Report per-user status could be misattributed to the
  * wrong person after deletePerson() shifted a later person into a deleted
  * slot, because atomicState.personStatusSnapshot stayed keyed to the old
@@ -43,6 +43,11 @@
  * 00:00 day sandwiched between days that do have data is still shown -
  * that's real information, not padding. The total row's day count reflects
  * whatever's actually visible instead of a fixed "30 days".
+ * 4.3.4 changes: displayed values (day rows and the total row) now round to
+ * the nearest 15 minutes instead of the nearest minute. The day-trimming
+ * "has this day got any data" check now uses that same rounded value too,
+ * so a day that rounds down to 00:00 for everyone is treated as empty for
+ * trimming purposes, not just for display. Updated the page description.
  *
  * Purpose:
  * - Aggregate household presence from named people, Hubitat mobile geolocation presence devices, phone IP checks, Third Party Services switches and Guest Mode.
@@ -413,7 +418,7 @@ def presenceReportPage(params = null) {
         }
 
         section("<b>Rolling ${presenceReportDayCount()} day presence report</b>") {
-            paragraph "Hours each user was present, by calendar day. Today's row is a running total, not a finished day."
+            paragraph "Time present per user device per day, rounded to the nearest 15 minutes."
             paragraph presenceReportHtml()
         }
     }
@@ -3172,9 +3177,19 @@ Long overlapMs(List<Map> intervals, Long windowStart, Long windowEnd) {
     return total
 }
 
-String formatHoursMinutes(Long totalMs) {
+// Presence Report only - rounds to the nearest 15 minutes (900000ms) in one step
+// rather than rounding to the minute first, to avoid double-rounding drift. Shared
+// by formatHoursMinutes() and the day-trimming "hasData" check in
+// presenceReportHtml() so a day that rounds down to 00:00 for everyone is treated
+// as empty for trimming purposes too, not just for display.
+Long roundedQuarterHourMinutes(Long totalMs) {
     Long safeMs = (totalMs == null || totalMs < 0L) ? 0L : totalMs
-    Long totalMinutes = Math.round(safeMs / 60000.0) as Long
+    Long quarterHours = Math.round(safeMs / 900000.0) as Long
+    return quarterHours * 15L
+}
+
+String formatHoursMinutes(Long totalMs) {
+    Long totalMinutes = roundedQuarterHourMinutes(totalMs)
     Long hours = totalMinutes.intdiv(60) as Long
     Long minutes = totalMinutes % 60L
     return "${hours.toString().padLeft(2, '0')}:${minutes.toString().padLeft(2, '0')}"
@@ -3226,7 +3241,7 @@ String presenceReportHtml() {
             String key = "person${p.index}"
             Long ms = overlapMs(intervalsByKey[key], dayStart, dayEnd)
             msValues[key] = ms
-            if (ms > 0L) hasData = true
+            if (roundedQuarterHourMinutes(ms) > 0L) hasData = true
         }
         String label = presenceReportDayLabel(dayStart) + (daysAgo == 0 ? " (today, so far)" : "")
         dayRows << [label: label, msValues: msValues, hasData: hasData]
