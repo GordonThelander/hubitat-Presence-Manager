@@ -1,6 +1,6 @@
 # Presence Manager
 
-**4.3.4 Beta - Hubitat Elevation household occupancy manager**
+**4.4 Beta - Hubitat Elevation household occupancy manager**
 
 Presence Manager combines multiple presence signals into one reliable household status for Hubitat. It is designed to avoid a false `Away` result when one phone, integration or network check briefly drops out while other evidence still shows someone is home.
 
@@ -44,23 +44,9 @@ Presence Manager is **fast to Home and conservative to Away**:
 
 Once this repository is published, install through Hubitat Package Manager using the repository's `packageManifest.json`, or use Hubitat's manual code installation flow.
 
-## 4.3.4 beta scope
+## 4.4 beta scope
 
-4.1 fixed an Activity Report defect: deleting a person could leave the report keyed to the person that slid into the deleted slot's old data, so it could log a Home/Departed transition for the wrong person. It also hardened the report so two people sharing a display name cannot suppress each other's status rows.
-
-4.2 is a consistency and cleanup pass on top of that: the main-status-switch assignment screen (Main page setup gate, Application Child Switch Configuration page, and Advanced Configuration page) is now a single shared block instead of three copy-pasted ones, which also fixes the Application Child Switch Configuration page silently hiding its "ready" confirmation when the main status switch was assigned to an existing switch or presence device rather than the managed child switch. The "Last N report events" labels now reflect the configurable retention setting instead of a hardcoded 500, and a couple of small dead-code and clarity cleanups were made.
-
-4.3 adds a new Presence Report page, linked from the main dashboard just below Activity Report, showing each user's hours present per calendar day over a rolling 30 day window plus a 30-day total row. It's built entirely on the existing Activity Report data, no new tracking was added. Known limitation: a report window spanning a person deletion can briefly misattribute hours to whoever takes over that slot, the same root cause as the defect fixed in 4.1, just not retroactive to already-stored history rows.
-
-4.3.1 fixes a bug in that report: anyone who had been continuously Home since before updating to 4.3 showed 00:00 indefinitely, because their only recorded Home event predated the new tracking field 4.3 introduced and was being silently skipped. Older history rows are now read via a fallback that recovers the same information from the existing display timestamp instead.
-
-4.3.2 fixes another way the same report could get stuck at 00:00: clicking Clear Activity Report wiped the one history row a currently-Home person's entry depends on, and since their status hasn't changed, nothing re-logs a replacement, leaving them stuck until their next real departure/arrival. Clearing now re-seeds a fresh Home anchor for everyone currently Home, and the report page also self-heals the same gap on render, covering the case where an anchor row instead ages out of the retention cap naturally over time with no clear involved.
-
-4.3.3 changes how the report renders: it no longer always shows all 30 rows padded out with days nobody could ever have data for (before the instance existed, or before people were configured). It now shows today plus however many days actually have recorded data, dropping the trailing run of untracked days. A genuine 00:00 day sandwiched between days that do have data is still shown, since that's real information rather than padding. The total row's day count reflects whatever's actually visible.
-
-4.3.4 rounds the report's displayed values to the nearest 15 minutes instead of the nearest minute, and updates the page description accordingly. The day-trimming check now uses that same rounded value too, so a day that rounds down to 00:00 for everyone is treated as empty for trimming purposes, not just for display.
-
-All releases carry forward the B4.0 broader beta package (based on the B3.1.42.3 functional baseline), including mobile control layout corrections and immediate manual-refresh LAN status reporting. None deliberately change the presence decision logic.
+Carries forward the B4.0 broader beta package (based on the B3.1.42.3 functional baseline). Highlights since 4.0: a Presence Report page showing each user's hours present per calendar day over a rolling 30 day window; an optional Location Lookup line on the main page (reverse-geocodes the hub's configured coordinates via OpenStreetMap, off by default, never looked up automatically); every table in the app auto-widths its columns to content instead of fixed percentages. See the git history for the detailed per-version changelog. None of this deliberately changes the presence decision logic.
 
 ## Beta testing notes
 

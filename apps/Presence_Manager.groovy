@@ -1,53 +1,12 @@
 /*
  * Presence Manager
  * Namespace: Hubitat Integrations
- * Version: 4.3.4
- * Release: Presence Report values now round to the nearest 15 minutes, with an updated description. Based on the B4.0 broader beta baseline (B3.1.42.3 functional baseline).
- * 4.1 fixed: Activity Report per-user status could be misattributed to the
- * wrong person after deletePerson() shifted a later person into a deleted
- * slot, because atomicState.personStatusSnapshot stayed keyed to the old
- * index. Also hardened addHistory() so two people sharing a display name
- * cannot suppress each other's Home/Departed report rows.
- * 4.2 fixes: configPage() only showed the "main status switch is ready"
- * confirmation when outputMode was "child", hiding it for the "existing" and
- * "presence" assignment modes, because the switch-assignment block had been
- * copy-pasted across mainPage/configPage/advancedConfigPage and drifted.
- * That block is now a single shared method used by all three pages. Also:
- * the "Last 500 report events" labels now reflect the configurable retention
- * setting instead of a hardcoded 500, removed the dead historyHtml() method,
- * documented the unreachable "mixed evidence" fallback in evaluateOccupancy(),
- * and the per-person Save button now shows its own index.
- * 4.3 adds: a new Presence Report page (linked from the main page, below
- * Activity Report) showing each user's hours present per calendar day over
- * a rolling 30 day window, plus a 30-day total row. Built on top of the
- * existing Activity Report "user status" entries; addHistory() now also
- * stores a timeMs epoch value on every row so durations don't need to be
- * parsed back out of the display timestamp string.
- * 4.3.1 fixes: personHomeIntervalsMs() required timeMs on every row, so
- * anyone who had been continuously Home since before updating to 4.3 (no
- * *new* Home transition to log) showed 00:00 indefinitely - their only Home
- * event on record predated timeMs entirely. Added a fallback that parses
- * the older display timestamp string for rows that don't have timeMs.
- * 4.3.2 fixes: clicking Clear Activity Report wiped the one history row a
- * currently-Home person's report entry depends on, and since their status
- * hasn't changed, recordUserStatusChanges() never logs a replacement -
- * leaving them stuck at 00:00 until their next real departure/arrival.
- * clearHistory() now re-seeds a fresh Home anchor for everyone currently
- * Home at clear time, and presenceReportHtml() also self-heals the same
- * gap on render (covers the same failure mode if an anchor row instead
- * ages out of the retention cap naturally over time, with no clear involved).
- * 4.3.3 changes: the report no longer always renders all 30 rows. It now
- * drops the trailing run of days where nobody has any recorded time at all
- * (e.g. before this instance existed or these people were configured), and
- * only shows today plus however many days actually have data. A genuine
- * 00:00 day sandwiched between days that do have data is still shown -
- * that's real information, not padding. The total row's day count reflects
- * whatever's actually visible instead of a fixed "30 days".
- * 4.3.4 changes: displayed values (day rows and the total row) now round to
- * the nearest 15 minutes instead of the nearest minute. The day-trimming
- * "has this day got any data" check now uses that same rounded value too,
- * so a day that rounds down to 00:00 for everyone is treated as empty for
- * trimming purposes, not just for display. Updated the page description.
+ * Version: 4.4
+ * Release: Adds an optional Location Lookup line on the main page, auto-widths
+ * every table in the app, and removes several dead functions. Based on the B4.0
+ * broader beta baseline (B3.1.42.3 functional baseline). See git log for the
+ * detailed per-version changelog; non-obvious behaviour is documented inline
+ * at the relevant code rather than repeated here.
  *
  * Purpose:
  * - Aggregate household presence from named people, Hubitat mobile geolocation presence devices, phone IP checks, Third Party Services switches and Guest Mode.
@@ -165,6 +124,7 @@ def appButtonHandler(String btn) {
         }
     }
     if (btn == "pingNowBtn") runPingChecks()
+    if (btn == "lookupAddressBtn") lookupApproximateAddress()
 
     if (btn == "refreshDataBtn") {
         // Manual Refresh data intentionally uses one completed IP sweep as the
@@ -309,10 +269,6 @@ void outputSwitchReadyStatusHtml(Boolean includeGuestSwitchStatus) {
     if (includeGuestSwitchStatus) paragraph guestSwitchCreatedHtml()
 }
 
-String uniformButtonWidthCssHtml() {
-    return responsiveUiCssHtml()
-}
-
 String responsiveUiCssHtml() {
     return """
 <style>
@@ -320,10 +276,16 @@ String responsiveUiCssHtml() {
 .pm-desktop { display:block; }
 .pm-mobile { display:none; }
 .pm-table-wrap { width:100%; max-width:100%; overflow-x:auto; }
-.pm-table { border-collapse:collapse; width:100%; table-layout:fixed; }
-.pm-table th, .pm-table td { border:1px solid #ddd; padding:4px; text-align:left; vertical-align:top; overflow-wrap:anywhere; word-break:break-word; white-space:normal; }
-.pm-overall { display:flex; gap:24px; align-items:center; padding:4px 0; flex-wrap:wrap; }
-.pm-overall-label { font-weight:bold; min-width:150px; }
+/* Standing convention: every table in this app auto-widths its columns to content
+   (pm-scroll-table for multi-column data, pm-kv-table for label:value pairs), wrapped
+   in pm-table-wrap so a table wider than the screen scrolls horizontally instead of
+   forcing fixed/percentage column widths that leave uneven gaps or squeeze content.
+   There used to be a fixed-width .pm-table class here - retired in favour of this. */
+/* Grid rather than a fixed min-width label column, so the label column auto-sizes
+   to whichever row's label is widest and every row's value starts at the same X
+   position, instead of guessing a pixel width that may not fit future labels. */
+.pm-overall { display:grid; grid-template-columns:max-content 1fr; column-gap:24px; row-gap:4px; align-items:center; padding:4px 0; }
+.pm-overall-label { font-weight:bold; }
 .pm-card { border:1px solid #ddd; border-radius:8px; padding:10px; margin:10px 0; background:#fff; box-sizing:border-box; max-width:100%; overflow:hidden; }
 .pm-card-title { font-weight:bold; font-size:16px; margin-bottom:8px; }
 .pm-field { margin-top:8px; }
@@ -334,15 +296,33 @@ String responsiveUiCssHtml() {
 .pm-event-time { font-weight:bold; margin-bottom:6px; }
 .pm-event-type { color:#444; font-weight:bold; margin-bottom:4px; }
 
-/* Presence report table - deliberately does not use width:100%/table-layout:fixed like
-   .pm-table, so it can grow wider than its wrapper as people are added and actually
-   trigger the .pm-table-wrap horizontal scrollbar on narrow screens instead of just
-   squeezing columns unreadably thin. */
-.pm-scroll-table { border-collapse:collapse; }
-.pm-scroll-table th, .pm-scroll-table td { border:1px solid #ddd; padding:4px 10px; text-align:left; white-space:nowrap; }
+/* General-purpose auto-width data table (multiple columns, header row). No
+   table-layout:fixed, so column PROPORTIONS are still driven by content, not
+   forced equal or to arbitrary percentages - but width:100% means the table
+   itself always fills its container like every other table on the page instead
+   of shrinking to a half-empty-looking box when there isn't much content, with
+   any leftover space distributed across columns by the browser rather than
+   forced onto one. Pair with pm-table-wrap so it scrolls horizontally on narrow
+   screens if content genuinely doesn't fit, instead of squeezing unreadably thin. */
+.pm-scroll-table { border-collapse:collapse; width:100%; }
+.pm-scroll-table th, .pm-scroll-table td { border:1px solid #ddd; padding:4px calc(10px + 1ch); text-align:left; white-space:nowrap; }
 .pm-scroll-table th.pm-date-col, .pm-scroll-table td.pm-date-col { min-width:150px; }
 .pm-scroll-table th.pm-hours-col, .pm-scroll-table td.pm-hours-col { min-width:90px; text-align:right; }
 .pm-scroll-table tr.pm-total-row td { border-top:2px solid #444; font-weight:bold; }
+
+/* Same auto-width behaviour as pm-scroll-table, but for tables that can hold long
+   freeform text (Activity Report detail messages, evidence lists) where forcing
+   nowrap would make the table absurdly wide instead of just wrapping the text. */
+.pm-scroll-table-wrap { border-collapse:collapse; width:100%; }
+.pm-scroll-table-wrap th, .pm-scroll-table-wrap td { border:1px solid #ddd; padding:4px calc(10px + 1ch); text-align:left; vertical-align:top; white-space:normal; overflow-wrap:anywhere; word-break:break-word; }
+
+/* General-purpose auto-width label:value table (rowHtml/rowHtmlRawValue). The label
+   column sizes to its own longest label per table - it can't line up pixel-for-pixel
+   with a different table's label column since they're separate <table> elements, but
+   within a table it's exact instead of a guessed pixel width. */
+.pm-kv-table { border-collapse:collapse; width:100%; }
+.pm-kv-table td { border:1px solid #ddd; padding:4px calc(4px + 1ch); vertical-align:top; overflow-wrap:anywhere; word-break:break-word; }
+.pm-kv-table td.pm-kv-label { font-weight:bold; white-space:nowrap; }
 
 /* Keep only real action buttons normalised. Do not touch Hubitat card/page layout classes. */
 input[type='submit'],
@@ -358,7 +338,7 @@ button,
     .pm-desktop { display:none !important; }
     .pm-mobile { display:block !important; }
     .pm-overall { display:block; }
-    .pm-overall-label { min-width:0; margin-bottom:6px; }
+    .pm-overall-label { margin-bottom:6px; }
     input[type='submit'], button, .btn {
         min-width:0 !important;
         max-width:100% !important;
@@ -550,6 +530,17 @@ def advancedConfigPage(params = null) {
                 input "pingNowBtn", "button", title: "Ping now", submitOnChange: true
             }
 
+            section("<b>Approximate address (optional)</b>") {
+                paragraph "Reverse-geocodes the hub's configured home coordinates via OpenStreetMap's free Nominatim service and shows a street-level approximation near Overall Status on the main page. Sends those coordinates to OpenStreetMap each time you look it up. Off by default, and never looked up automatically - use the button below."
+                input "showApproximateAddress", "bool",
+                    title: "Show approximate address on the main page",
+                    defaultValue: false,
+                    required: false,
+                    submitOnChange: true
+                input "lookupAddressBtn", "button", title: "Look up address now", submitOnChange: true
+                paragraph approximateAddressStatusHtml()
+            }
+
             section("<b>Diagnostic Mode</b>") {
                 paragraph decisionDetailHtml()
 
@@ -580,6 +571,7 @@ def peoplePage(params = null) {
         }
 
             section("<b>People</b>") {
+                paragraph responsiveUiCssHtml()
                 paragraph "Add household members here. Use the Hubitat mobile app geolocation presence sensor as the primary signal. The phone IP is optional secondary evidence. Saved users remain on this page with Edit and Delete actions."
                 Integer count = personCountValue()
 
@@ -791,6 +783,8 @@ void initialiseState() {
     if (atomicState.presenceSubscriptionSummary == null) atomicState.presenceSubscriptionSummary = "none"
     if (atomicState.switchSubscriptionSummary == null) atomicState.switchSubscriptionSummary = "none"
     if (atomicState.pendingScheduleStatus == null) atomicState.pendingScheduleStatus = ""
+    if (atomicState.approximateAddress == null) atomicState.approximateAddress = ""
+    if (atomicState.approximateAddressStatus == null) atomicState.approximateAddressStatus = ""
     initialisePersonCreationState()
     initialisePersonEditingState()
 }
@@ -1861,10 +1855,6 @@ String primaryConfiguredIpForPerson(Integer index) {
     return ips ? ips[0] : ""
 }
 
-Boolean personHasAcceptedIp(Integer index) {
-    return primaryConfiguredIpForPerson(index) ? true : false
-}
-
 Integer currentDraftPersonIndex() {
     Integer count = personCountValue()
     for (int i = 1; i <= count; i++) {
@@ -2137,10 +2127,6 @@ Boolean personHasAnyVisibleConfiguration(Integer index) {
     return false
 }
 
-Boolean personHasAcceptedIpForVisibleInput(Integer index) {
-    return primaryVisibleIpForPerson(index) ? true : false
-}
-
 String primaryVisibleIpForPerson(Integer index) {
     List<String> ips = validatedIpsFromText((settings[personIpInputKey(index)] ?: "").toString()).accepted
     return ips ? ips[0] : ""
@@ -2200,12 +2186,12 @@ String personSavedSummaryHtml(Integer index) {
     String ip = primaryConfiguredIpForPerson(index)
     String ipStatus = ip ? ipStatusSummaryHtml(ip, ((atomicState.ipStatus ?: [:]) as Map)[ip] as Map) : "none configured"
 
-    String out = "<table style='border-collapse:collapse;width:100%'>"
+    String out = "<div class='pm-table-wrap'><table class='pm-kv-table'>"
     out += rowHtml("Name", name)
     out += rowHtmlRawValue("Geolocation device", dev ? (devValid ? "${html(devName)} = ${presenceStatusHtml(presenceValue)}" : "${html(devName)} - <span style='color:red;font-weight:bold;'>invalid presence device</span>") : html(devName))
     out += rowHtml("Configured IP", ip ?: "none configured")
     out += rowHtmlRawValue("IP status", ipStatus)
-    out += "</table>"
+    out += "</table></div>"
     return out
 }
 
@@ -2447,6 +2433,93 @@ Boolean ipIsReachableAndFresh(Map row) {
     return false
 }
 
+// ---------------- Approximate address (OpenStreetMap Nominatim) ----------------
+// Backlogged feature. Only ever runs when the "Look up address now" button is
+// clicked - never automatically - since it sends the hub's home coordinates to an
+// external third-party service. This is the app's first outbound HTTP call of any
+// kind; the async response object below (hasError/getErrorMessage/getJson) is
+// Hubitat's own wrapper and can't be exercised outside the real hub, so this needs
+// an actual on-hub test before being trusted, not just a clean local compile.
+
+void lookupApproximateAddress() {
+    Double lat = null
+    Double lon = null
+    try { lat = location?.latitude as Double } catch (Throwable ignored) { }
+    try { lon = location?.longitude as Double } catch (Throwable ignored) { }
+
+    if (lat == null || lon == null) {
+        atomicState.approximateAddressStatus = "Hub location coordinates are not configured."
+        return
+    }
+
+    Map params = [
+        uri: "https://nominatim.openstreetmap.org/reverse",
+        query: [format: "jsonv2", lat: lat, lon: lon, zoom: 18, addressdetails: 1],
+        headers: ["User-Agent": "Hubitat-PresenceManager-App/${app?.id ?: 'unknown'}"],
+        timeout: 15
+    ]
+
+    atomicState.approximateAddressStatus = "Looking up..."
+    try {
+        asynchttpGet("handleApproximateAddressResponse", params)
+    } catch (Throwable t) {
+        atomicState.approximateAddressStatus = "Lookup failed to start: ${safeMessage(t.message)}"
+    }
+}
+
+@SuppressWarnings("unused")
+void handleApproximateAddressResponse(response, data) {
+    try {
+        if (response?.hasError()) {
+            atomicState.approximateAddressStatus = "Lookup failed: ${safeMessage(response.getErrorMessage())}"
+            logWarn("Approximate address lookup failed: ${response.getErrorMessage()}")
+            return
+        }
+        Map json = response.getJson() as Map
+        Map address = (json?.address ?: [:]) as Map
+        String composed = composeApproximateAddress(address)
+        if (composed) {
+            atomicState.approximateAddress = composed
+            atomicState.approximateAddressStatus = "Looked up at ${timestamp()}"
+        } else {
+            atomicState.approximateAddressStatus = "Lookup returned no usable address."
+        }
+    } catch (Throwable t) {
+        atomicState.approximateAddressStatus = "Could not parse lookup response: ${safeMessage(t.message)}"
+        logWarn("Approximate address lookup parse error: ${safeMessage(t.message)}")
+    }
+}
+
+// Deliberately excludes house number and postcode - just enough to be useful
+// without displaying a precise street address on a page that could be shared.
+String composeApproximateAddress(Map address) {
+    if (!address) return ""
+    String road = (address.road ?: address.pedestrian ?: address.footway ?: "").toString().trim()
+    String locality = (address.suburb ?: address.city_district ?: address.town ?: address.village ?: address.city ?: address.county ?: "").toString().trim()
+    List parts = [road, locality].findAll { it }
+    return parts.join(", ")
+}
+
+// Returns just the value cell's contents - the "Location Lookup" label itself is
+// supplied by the shared .pm-overall grid in statusHtml(), so both this row and the
+// Overall Status row above it line up in the same auto-width label column.
+String approximateAddressHtml() {
+    if (!(showApproximateAddress == true)) return ""
+    String addr = (atomicState.approximateAddress ?: "").toString()
+    if (!addr) return "<span style='color:#777;'>not run yet - use Advanced Configuration.</span>"
+    return html(addr)
+}
+
+String approximateAddressStatusHtml() {
+    String addr = (atomicState.approximateAddress ?: "").toString()
+    String status = (atomicState.approximateAddressStatus ?: "").toString()
+    String out = "<div style='font-size:0.9em'>"
+    out += "Current: ${addr ? html(addr) : 'none looked up yet'}<br/>"
+    if (status) out += "Status: ${html(status)}"
+    out += "</div>"
+    return out
+}
+
 // ---------------- Ping parsing ----------------
 
 Map parsePingOutcome(def pingData, String raw) {
@@ -2593,11 +2666,6 @@ Integer personCountValue() {
     }
 }
 
-Boolean showAdvancedSettingsEnabled() {
-    if (showAdvancedSettings == null) return false
-    try { return showAdvancedSettings as Boolean } catch (Throwable ignored) { return false }
-}
-
 Integer pingIntervalValue() {
     try { return ((pingIntervalSeconds ?: "300") as Integer) } catch (Throwable ignored) { return 300 }
 }
@@ -2690,29 +2758,6 @@ Integer numericSetting(String name, Integer defaultValue, Integer min, Integer m
 
 // ---------------- UI status ----------------
 
-String mainUsersHtml() {
-    List people = personProfiles()
-    if (!people) return "No users have been saved yet. Open configuration to add the first user."
-
-    String out = "<table style='border-collapse:collapse;width:100%;table-layout:fixed'>"
-    out += headerRowFixed(["User", "Geolocation", "Configured IP", "IP status"], ["18%", "48%", "16%", "18%"])
-    people.each { Map p ->
-        def dev = (p.presenceDevices ?: []) ? (p.presenceDevices[0]) : null
-        String devName = dev ? html(dev?.displayName ?: "selected") : "none configured"
-        String presence = dev ? presenceStatusHtml(safeCurrentValue(dev, "presence") ?: "unknown") : ""
-        String ip = (p.ips ?: []) ? (p.ips[0] ?: "") : ""
-        String ipStatus = ip ? ipStatusSummaryHtml(ip, ((atomicState.ipStatus ?: [:]) as Map)[ip] as Map) : "none configured"
-        out += dataRowFixed([
-            html(p.name ?: ""),
-            dev ? "${devName} = ${presence}" : devName,
-            html(ip ?: "none configured"),
-            ipStatus
-        ], ["18%", "48%", "16%", "18%"])
-    }
-    out += "</table>"
-    return out
-}
-
 
 String applicationChildSwitchSummaryHtml() {
     def main = null
@@ -2729,11 +2774,12 @@ String applicationChildSwitchSummaryHtml() {
     String mainState = main ? (safeCurrentValue(main, "switch") ?: safeCurrentValue(main, "presence") ?: "unknown") : "not configured"
     String guestState = gm ? (safeCurrentValue(gm, "switch") ?: "unknown") : "not configured"
 
-    String out = "<table style='border-collapse:collapse;width:100%;table-layout:fixed'>"
-    out += headerRowFixed(["Switch", "Current name", "Current state / assignment"], ["24%", "38%", "38%"])
-    out += dataRowFixed(["Main status target", html(mainName), "${html(mainState)}<br/><span style='color:#777'>${html(modeLabel)}</span>"], ["24%", "38%", "38%"])
-    out += dataRowFixed(["Guest Mode child switch", html(guestName), "${html(guestState)}<br/><span style='color:#777'>Managed child switch</span>"], ["24%", "38%", "38%"])
-    out += "</table>"
+    String out = responsiveUiCssHtml()
+    out += "<div class='pm-table-wrap'><table class='pm-scroll-table'>"
+    out += headerRow(["Switch", "Current name", "Current state / assignment"])
+    out += dataRow(["Main status target", html(mainName), "${html(mainState)}<br/><span style='color:#777'>${html(modeLabel)}</span>"])
+    out += dataRow(["Guest Mode child switch", html(guestName), "${html(guestState)}<br/><span style='color:#777'>Managed child switch</span>"])
+    out += "</table></div>"
     return out
 }
 
@@ -2749,12 +2795,12 @@ String guestModeMainTimerHtml() {
     }
 
     String out = responsiveUiCssHtml()
-    out += "<div class='pm-desktop'>"
-    out += "<table class='pm-table'>"
+    out += "<div class='pm-desktop'><div class='pm-table-wrap'>"
+    out += "<table class='pm-kv-table'>"
     out += rowHtml("Selected duration", durationText)
     out += rowHtml("Timer", timerText)
     out += "</table>"
-    out += "</div>"
+    out += "</div></div>"
 
     out += "<div class='pm-mobile'>"
     out += "<div class='pm-card'>"
@@ -2763,12 +2809,6 @@ String guestModeMainTimerHtml() {
     out += "</div>"
     out += "</div>"
     return out
-}
-
-String guestModeTimerStatusText() {
-    Long until = (atomicState.guestModeUntil ?: 0L) as Long
-    if (until && until > now()) return "active - ends at ${formatEpochMs(until)} (${remainingTimeText(until)} remaining)"
-    return "not active"
 }
 
 String remainingTimeText(Long untilMs) {
@@ -2790,7 +2830,11 @@ String statusHtml() {
 
     String out = ""
     out += responsiveUiCssHtml()
-    out += "<div class='pm-overall'><div class='pm-overall-label'>Overall Status</div><div>${overallStatusHtml(result)}</div></div><br/>"
+    out += "<div class='pm-overall'>"
+    out += "<div class='pm-overall-label'>Overall Status</div><div>${overallStatusHtml(result)}</div>"
+    String addressValue = approximateAddressHtml()
+    if (addressValue) out += "<div class='pm-overall-label'>Location Lookup</div><div>${addressValue}</div>"
+    out += "</div><br/>"
 
     out += "<b>Occupation Telemetry</b><br/>"
     out += statusTelemetryDesktopHtml(peopleForStatus, houseDevices, manualSnapshot)
@@ -2799,12 +2843,17 @@ String statusHtml() {
 }
 
 String statusTelemetryDesktopHtml(List peopleForStatus, List houseDevices, Boolean manualSingleSweepIp = false) {
+    // pm-scroll-table: auto width, no table-layout:fixed, so columns size to their
+    // actual content instead of a fixed percentage split. Every table in this app
+    // follows this convention now - see the pm-scroll-table/pm-scroll-table-wrap/
+    // pm-kv-table comments in responsiveUiCssHtml() for the three variants and when
+    // each applies.
     String out = "<div class='pm-desktop'><div class='pm-table-wrap'>"
-    out += "<table class='pm-table'>"
-    out += headerRowFixed(["User / System", "Effective Status", "Hubitat / 3rd Party Presence", "LAN IP"], ["22%", "16%", "28%", "34%"])
+    out += "<table class='pm-scroll-table'>"
+    out += headerRow(["User / System", "Effective Status", "Hubitat / 3rd Party Presence", "LAN IP"])
 
     if (!peopleForStatus && !houseDevices) {
-        out += dataRowFixed(["<span style='color:#777;font-weight:bold;'>Pending</span>", "", "", ""], ["22%", "16%", "28%", "34%"])
+        out += dataRow(["<span style='color:#777;font-weight:bold;'>Pending</span>", "", "", ""])
     }
 
     peopleForStatus.each { Map p ->
@@ -2813,14 +2862,14 @@ String statusTelemetryDesktopHtml(List peopleForStatus, List houseDevices, Boole
         String geo = dev ? homeDepartedFromPresenceHtml(safeCurrentValue(dev, "presence") ?: "unknown") : ""
         String ip = (p.ips ?: []) ? (p.ips[0] ?: "").toString() : ""
         String ipCell = ip ? "${html(ip)} - ${lanIpPresenceHtml(ip, ((atomicState.ipStatus ?: [:]) as Map)[ip] as Map, manualSingleSweepIp)}" : ""
-        out += dataRowFixed([html(p.name ?: ""), effective, geo, ipCell], ["22%", "16%", "28%", "34%"])
+        out += dataRow([html(p.name ?: ""), effective, geo, ipCell])
     }
 
     houseDevices.eachWithIndex { dev, Integer idx ->
         String value = safeCurrentValue(dev, "switch") ?: "unknown"
         String systemName = dev?.displayName ?: "3rd Party ${idx + 1}"
         String serviceStatus = homeDepartedFromSwitchHtml(value)
-        out += dataRowFixed([html(systemName), serviceStatus, serviceStatus, ""], ["22%", "16%", "28%", "34%"])
+        out += dataRow([html(systemName), serviceStatus, serviceStatus, ""])
     }
 
     out += "</table></div></div>"
@@ -3062,23 +3111,16 @@ String deviceHistoryKey(dev) {
     try { return dev.id?.toString() ?: dev.displayName?.toString() ?: "unknown" } catch (Throwable ignored) { return dev.displayName?.toString() ?: "unknown" }
 }
 
-String occupancyReportLabel(String value) {
-    String normalised = (value ?: "unknown").toString().toLowerCase()
-    if (normalised == "occupied") return "Home"
-    if (normalised == "empty") return "Away"
-    return "Unknown"
-}
-
 String activityReportHtml() {
     List history = reportableHistoryRows((atomicState.history ?: []) as List)
     if (!history) return responsiveUiCssHtml() + "No report events recorded yet."
 
     String out = responsiveUiCssHtml()
     out += "<div class='pm-desktop'><div class='pm-table-wrap'>"
-    out += "<table class='pm-table'>"
-    out += headerRowFixed(["Time", "Event", "Detail"], ["22%", "18%", "60%"])
+    out += "<table class='pm-scroll-table-wrap'>"
+    out += headerRow(["Time", "Event", "Detail"])
     history.take(historyLimitValue()).each { Map row ->
-        out += dataRowFixed([html(row.time ?: ""), historyTypeLabel(row.type), html(row.message ?: "")], ["22%", "18%", "60%"])
+        out += dataRow([html(row.time ?: ""), historyTypeLabel(row.type), html(row.message ?: "")])
     }
     out += "</table></div></div>"
 
@@ -3285,9 +3327,9 @@ String decisionDetailHtml() {
     try { output = outputDevice() } catch (Throwable ignored) { }
     def gm = existingGuestModeSwitchDevice()
 
-    String out = ""
+    String out = responsiveUiCssHtml()
     out += "<b>Decision detail</b><br/>"
-    out += "<table style='border-collapse:collapse;width:100%'>"
+    out += "<div class='pm-table-wrap'><table class='pm-kv-table'>"
     out += rowHtml("Current occupancy", atomicState.currentOccupancy ?: "unknown")
     out += rowHtml("Last committed occupancy", committedOccupancyState())
     out += rowHtml("Confidence", "${atomicState.currentConfidence ?: 0}%")
@@ -3309,10 +3351,10 @@ String decisionDetailHtml() {
     out += rowHtml("Last notification", atomicState.lastNotificationText ? "${atomicState.lastNotificationText} at ${atomicState.lastNotificationTime ?: ''}" : "none")
     out += rowHtml("Last notification attempt", atomicState.lastNotificationAttemptText ? "${atomicState.lastNotificationAttemptText} at ${atomicState.lastNotificationAttemptTime ?: ''}; devices=${atomicState.lastNotificationAttemptDevices ?: 0}; accepted=${atomicState.lastNotificationAcceptedCount ?: 0}${atomicState.lastNotificationFailure ? '; error=' + atomicState.lastNotificationFailure : ''}" : "none")
     out += rowHtml("Evidence summary", result.summary ?: "")
-    out += "</table><br/>"
+    out += "</table></div><br/>"
 
     out += "<b>People, phone presence and IP decision inputs</b><br/>"
-    out += "<table style='border-collapse:collapse;width:100%'>"
+    out += "<div class='pm-table-wrap'><table class='pm-scroll-table-wrap'>"
     out += headerRow(["Person", "Hubitat mobile app geolocation presence sensor", "Configured IP", "Score", "Present", "Evidence", "Ignored"])
     (result.people ?: []).each { Map p ->
         List mobileNames = (p.presenceDevices ?: []).collect { html(it?.displayName ?: "") }.findAll { it }
@@ -3327,10 +3369,10 @@ String decisionDetailHtml() {
             (p.ignored ?: []).collect { html(it) }.join("<br/>") ?: "none"
         ])
     }
-    out += "</table><br/>"
+    out += "</table></div><br/>"
 
     out += "<b>Third Party Services</b><br/>"
-    out += "<table style='border-collapse:collapse;width:100%'>"
+    out += "<div class='pm-table-wrap'><table class='pm-scroll-table-wrap'>"
     out += headerRow(["Device", "Status", "Stale", "Evidence"])
     List houseDevices = asList(houseEvidenceSwitches)
     if (houseDevices) {
@@ -3347,10 +3389,10 @@ String decisionDetailHtml() {
     } else {
         out += dataRow(["none configured", "", "", ""])
     }
-    out += "</table><br/>"
+    out += "</table></div><br/>"
 
     out += "<b>IP status</b><br/>"
-    out += "<table style='border-collapse:collapse;width:100%'>"
+    out += "<div class='pm-table-wrap'><table class='pm-scroll-table-wrap'>"
     out += headerRow(["IP", "Result", "Failures", "Rx/Tx", "Loss", "Avg ms", "Last checked", "Error"])
     if (ipMap) {
         ipMap.keySet().sort().each { String ip ->
@@ -3369,7 +3411,7 @@ String decisionDetailHtml() {
     } else {
         out += dataRow(["none", "No IP addresses configured", "", "", "", "", "", ""])
     }
-    out += "</table>"
+    out += "</table></div>"
 
     return out
 }
@@ -3406,20 +3448,6 @@ void scheduleEvaluationIfSummaryOutOfSync(Map result) {
     }
 }
 
-String occupancyStatusHtml(String value) {
-    String normalised = (value ?: "unknown").toString().toLowerCase()
-    if (normalised == "occupied") return "<span style='color:green;font-weight:bold;'>OCCUPIED</span>"
-    if (normalised == "empty") return "<span style='color:red;font-weight:bold;'>NOT OCCUPIED</span>"
-    return "<span style='color:#777;font-weight:bold;'>UNKNOWN</span>"
-}
-
-String guestModeSwitchStatusHtml(dev) {
-    String value = safeCurrentValue(dev, "switch") ?: "unknown"
-    String text = "${dev?.displayName ?: 'Guest Mode'} = ${value}"
-    if (value == "on") return "<span style='color:green;font-weight:bold;'>${html(text)}</span>"
-    return html(text)
-}
-
 String thirdPartyServiceStatusHtml(String value) {
     String normalised = (value ?: "unknown").toString().toLowerCase()
     if (normalised == "on") return "<span style='color:green;font-weight:bold;'>Present</span>"
@@ -3446,11 +3474,11 @@ String mobileFieldHtml(String label, String rawValue) {
 }
 
 String rowHtmlRawValue(String k, String rawValue) {
-    return "<tr><td style='border:1px solid #ddd;padding:4px;width:230px'><b>${html(k)}</b></td><td style='border:1px solid #ddd;padding:4px'>${rawValue ?: ''}</td></tr>"
+    return "<tr><td class='pm-kv-label'>${html(k)}</td><td>${rawValue ?: ''}</td></tr>"
 }
 
 String rowHtml(String k, String v) {
-    return "<tr><td style='border:1px solid #ddd;padding:4px;width:230px'><b>${html(k)}</b></td><td style='border:1px solid #ddd;padding:4px'>${html(v)}</td></tr>"
+    return "<tr><td class='pm-kv-label'>${html(k)}</td><td>${html(v)}</td></tr>"
 }
 
 String headerRow(List cols) {
