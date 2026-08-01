@@ -1,12 +1,14 @@
 /*
  * Presence Manager
  * Namespace: Hubitat Integrations
- * Version: 4.4
- * Release: Adds an optional Location Lookup line on the main page, auto-widths
- * every table in the app, and removes several dead functions. Based on the B4.0
- * broader beta baseline (B3.1.42.3 functional baseline). See git log for the
- * detailed per-version changelog; non-obvious behaviour is documented inline
- * at the relevant code rather than repeated here.
+ * Version: 4.5
+ * Release: Adds watchdogs for stuck IP ping scheduling and stuck Guest Mode expiry
+ * (both single-runIn chains with no backup, the same failure class Hubitat's
+ * scheduler is known to occasionally hit), and flags stale evidence explicitly in
+ * the dashboard's raw signal columns, on top of 4.4. Based on the B4.0 broader
+ * beta baseline (B3.1.42.3 functional baseline). See git log for the detailed
+ * per-version changelog; non-obvious behaviour is documented inline at the
+ * relevant code rather than repeated here.
  *
  * Purpose:
  * - Aggregate household presence from named people, Hubitat mobile geolocation presence devices, phone IP checks, Third Party Services switches and Guest Mode.
@@ -674,9 +676,17 @@ void initialize(Boolean fromDeferredSetup = false) {
 
     if (allConfiguredIps()) {
         atomicState.lastPingScheduled = "First IP check scheduled at ${timestamp()}"
+        // Also set nextPingDueMs here, not just in scheduleNextPing() - this is the
+        // very first ping kickoff after (re)initialise, and it bypasses
+        // scheduleNextPing() entirely. Without this, ensurePingScheduleNotStuck()
+        // has nothing to compare against and can't tell if this initial runIn call
+        // itself gets dropped, only drops that happen after at least one successful
+        // ping cycle has already run.
+        atomicState.nextPingDueMs = now() + 2000L
         runIn(2, "runPingChecks", [overwrite: true])
     } else {
         atomicState.lastPingScheduled = "No IP addresses configured"
+        atomicState.nextPingDueMs = 0L
     }
 
     Long until = (atomicState.guestModeUntil ?: 0L) as Long
@@ -785,6 +795,7 @@ void initialiseState() {
     if (atomicState.pendingScheduleStatus == null) atomicState.pendingScheduleStatus = ""
     if (atomicState.approximateAddress == null) atomicState.approximateAddress = ""
     if (atomicState.approximateAddressStatus == null) atomicState.approximateAddressStatus = ""
+    if (atomicState.nextPingDueMs == null) atomicState.nextPingDueMs = 0L
     initialisePersonCreationState()
     initialisePersonEditingState()
 }
@@ -896,8 +907,65 @@ void scheduleEvidenceWatchdog() {
 
 @SuppressWarnings("unused")
 void evaluateEvidenceWatchdog() {
+    ensurePingScheduleNotStuck()
+    ensureGuestModeExpiryNotStuck()
     evaluateOccupancy("evidence watchdog")
     scheduleEvidenceWatchdog()
+}
+
+// Same failure class as the ping schedule above: three call sites schedule
+// expireGuestMode() via a single unprotected runIn (startGuestMode(),
+// guestModeSwitchHandler(), and the resume-after-restart path in initialize()),
+// and if Hubitat drops that callback, guestModeActive() stays true forever - not
+// because atomicState.guestModeUntil is wrong (that correctly falls into the past),
+// but because guestModeActive() also treats the child switch's live "on" state as
+// sufficient on its own, and only expireGuestMode() ever turns that switch off.
+// So a single missed runIn silently holds the house "occupied" via Guest Mode
+// indefinitely, past its intended duration, with nothing else positioned to
+// notice. Reuses atomicState.guestModeUntil directly rather than tracking a
+// separate due-time field, since that's already exactly the expiry deadline.
+void ensureGuestModeExpiryNotStuck() {
+    Long until = (atomicState.guestModeUntil ?: 0L) as Long
+    if (until <= 0L) return
+    Long graceMs = 60000L
+    if (now() <= (until + graceMs)) return
+
+    def gm = existingGuestModeSwitchDevice()
+    Boolean switchStillOn = gm && safeCurrentValue(gm, "switch") == "on"
+    if (switchStillOn) {
+        atomicState.lastDecision = "Guest Mode expiry was overdue - watchdog forced expiry at ${timestamp()}"
+        expireGuestMode()
+    } else {
+        // Switch is already off (e.g. it was manually toggled through a path that
+        // didn't also clear the timer) - just clear the stale deadline, don't
+        // re-run expireGuestMode()'s notification/history side effects a second
+        // time for something that already happened.
+        atomicState.guestModeUntil = 0L
+        atomicState.guestModeUntilText = ""
+    }
+}
+
+// scheduleNextPing()'s runIn call has no backup, unlike the pending-transition
+// scheduling above, which was given a watchdog specifically because Hubitat's
+// scheduler is known to occasionally just fail to fire a runIn callback with no
+// error. If that ever happens to the ping reschedule, IP checks silently stop:
+// nothing re-triggers them, ipStatus ages past its freshness window for scoring
+// purposes while still displaying its last (now stale) result, and a person can
+// drop toward 0% and show Departed despite the dashboard's raw columns still
+// showing a positive reading, indefinitely, until something forces a fresh sweep.
+// This runs on the existing 60-second evidence watchdog cycle rather than its own
+// separate runIn chain (which would need the same protection anyway), and only
+// forces a recovery sweep once a ping is overdue by more than one full extra
+// interval, so normal scheduling jitter doesn't trigger it needlessly.
+void ensurePingScheduleNotStuck() {
+    if (!allConfiguredIps()) return
+    Long dueMs = (atomicState.nextPingDueMs ?: 0L) as Long
+    if (dueMs <= 0L) return
+    Long graceMs = Math.max(60000L, pingIntervalValue() * 1000L)
+    if (now() > (dueMs + graceMs)) {
+        atomicState.lastPingScheduled = "Ping schedule was overdue by more than ${(graceMs / 1000L) as Long}s - watchdog triggered a recovery sweep at ${timestamp()}"
+        runPingChecks()
+    }
 }
 
 void ensurePendingTransitionScheduled(String reason = "ensure pending transition") {
@@ -1055,11 +1123,13 @@ Map pingIpAddress(String ip, Map existingRow = [:]) {
 void scheduleNextPing() {
     if (!allConfiguredIps()) {
         atomicState.lastPingScheduled = "No IP addresses configured"
+        atomicState.nextPingDueMs = 0L
         return
     }
 
     Integer seconds = pingIntervalValue()
     atomicState.lastPingScheduled = "Next IP check scheduled in ${seconds} seconds at ${timestamp()}"
+    atomicState.nextPingDueMs = now() + (seconds * 1000L)
     runIn(seconds, "runPingChecks", [overwrite: true])
 }
 
@@ -2859,7 +2929,7 @@ String statusTelemetryDesktopHtml(List peopleForStatus, List houseDevices, Boole
     peopleForStatus.each { Map p ->
         def dev = (p.presenceDevices ?: []) ? (p.presenceDevices[0]) : null
         String effective = effectivePersonStatusHtml(p)
-        String geo = dev ? homeDepartedFromPresenceHtml(safeCurrentValue(dev, "presence") ?: "unknown") : ""
+        String geo = dev ? homeDepartedFromPresenceHtml(safeCurrentValue(dev, "presence") ?: "unknown", isEvidenceStale(dev, "presence")) : ""
         String ip = (p.ips ?: []) ? (p.ips[0] ?: "").toString() : ""
         String ipCell = ip ? "${html(ip)} - ${lanIpPresenceHtml(ip, ((atomicState.ipStatus ?: [:]) as Map)[ip] as Map, manualSingleSweepIp)}" : ""
         out += dataRow([html(p.name ?: ""), effective, geo, ipCell])
@@ -2868,7 +2938,7 @@ String statusTelemetryDesktopHtml(List peopleForStatus, List houseDevices, Boole
     houseDevices.eachWithIndex { dev, Integer idx ->
         String value = safeCurrentValue(dev, "switch") ?: "unknown"
         String systemName = dev?.displayName ?: "3rd Party ${idx + 1}"
-        String serviceStatus = homeDepartedFromSwitchHtml(value)
+        String serviceStatus = homeDepartedFromSwitchHtml(value, isEvidenceStale(dev, "switch"))
         out += dataRow([html(systemName), serviceStatus, serviceStatus, ""])
     }
 
@@ -2886,7 +2956,7 @@ String statusTelemetryMobileHtml(List peopleForStatus, List houseDevices, Boolea
     peopleForStatus.each { Map p ->
         def dev = (p.presenceDevices ?: []) ? (p.presenceDevices[0]) : null
         String effective = effectivePersonStatusHtml(p)
-        String geo = dev ? homeDepartedFromPresenceHtml(safeCurrentValue(dev, "presence") ?: "unknown") : "<span class='pm-muted'>none configured</span>"
+        String geo = dev ? homeDepartedFromPresenceHtml(safeCurrentValue(dev, "presence") ?: "unknown", isEvidenceStale(dev, "presence")) : "<span class='pm-muted'>none configured</span>"
         String ip = (p.ips ?: []) ? (p.ips[0] ?: "").toString() : ""
         String ipCell = ip ? "${html(ip)} - ${lanIpPresenceHtml(ip, ((atomicState.ipStatus ?: [:]) as Map)[ip] as Map, manualSingleSweepIp)}" : "<span class='pm-muted'>none configured</span>"
 
@@ -2901,7 +2971,7 @@ String statusTelemetryMobileHtml(List peopleForStatus, List houseDevices, Boolea
     houseDevices.eachWithIndex { dev, Integer idx ->
         String value = safeCurrentValue(dev, "switch") ?: "unknown"
         String systemName = dev?.displayName ?: "3rd Party ${idx + 1}"
-        String serviceStatus = homeDepartedFromSwitchHtml(value)
+        String serviceStatus = homeDepartedFromSwitchHtml(value, isEvidenceStale(dev, "switch"))
         out += "<div class='pm-card'>"
         out += "<div class='pm-card-title'>${html(systemName)}</div>"
         out += mobileFieldHtml("Effective Status", serviceStatus)
@@ -2973,16 +3043,28 @@ String formatDurationMmSs(Long totalSeconds) {
     return "${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}"
 }
 
-String homeDepartedFromPresenceHtml(String value) {
+// stale=true means this reading exists and looks positive, but evaluatePerson()/
+// evaluateHouseholdEvidence() excluded it from the score for being too old to trust
+// (isEvidenceStale()). Without flagging that here, the dashboard can show "Home" in
+// this column right next to "Departed (0%)" in Effective Status with nothing on
+// screen explaining why they disagree - they're both correct, just answering
+// different questions ("what does the sensor currently say" vs "what counts").
+String homeDepartedFromPresenceHtml(String value, Boolean stale = false) {
     String normalised = (value ?: "unknown").toString().toLowerCase()
-    if (normalised == "present") return "<span style='color:green;font-weight:bold;'>Home</span>"
+    if (normalised == "present") {
+        if (stale) return "<span style='color:#b36b00;font-weight:bold;'>Home (stale, not counted)</span>"
+        return "<span style='color:green;font-weight:bold;'>Home</span>"
+    }
     if (normalised == "not present" || normalised == "not_present" || normalised == "departed") return "<span style='color:red;font-weight:bold;'>Departed</span>"
     return html(value ?: "unknown")
 }
 
-String homeDepartedFromSwitchHtml(String value) {
+String homeDepartedFromSwitchHtml(String value, Boolean stale = false) {
     String normalised = (value ?: "unknown").toString().toLowerCase()
-    if (normalised == "on") return "<span style='color:green;font-weight:bold;'>Home</span>"
+    if (normalised == "on") {
+        if (stale) return "<span style='color:#b36b00;font-weight:bold;'>Home (stale, not counted)</span>"
+        return "<span style='color:green;font-weight:bold;'>Home</span>"
+    }
     if (normalised == "off") return "<span style='color:red;font-weight:bold;'>Departed</span>"
     return html(value ?: "unknown")
 }
@@ -3000,6 +3082,11 @@ String lanIpPresenceHtml(String ip, Map row, Boolean manualSingleSweepIp = false
     if (ipIsReachableAndFresh(row)) return "<span style='color:green;font-weight:bold;'>present</span>"
     String resultText = (row?.lastResult ?: "not checked").toString()
     if (resultText == "unreachable") return "<span style='color:red;font-weight:bold;'>unreachable</span>"
+    // Same gap as homeDepartedFromPresenceHtml() above: the last sweep found this IP
+    // reachable, but it's aged past ipIsReachableAndFresh()'s freshness window (or the
+    // ping schedule itself stalled - see ensurePingScheduleNotStuck()), so the score
+    // doesn't count it even though this raw result still reads positive.
+    if (row?.lastReachable == true) return "<span style='color:#b36b00;font-weight:bold;'>reachable (stale, not counted)</span>"
     return html(resultText)
 }
 

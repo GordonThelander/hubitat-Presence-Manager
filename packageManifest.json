@@ -1,10 +1,10 @@
 {
   "packageName": "Presence Manager",
   "author": "Gordon Thelander",
-  "version": "4.4",
+  "version": "4.5",
   "minimumHEVersion": "2.3.0",
-  "dateReleased": "2026-07-29",
-  "releaseNotes": "4.4 adds an optional Location Lookup line on the main page that reverse-geocodes the hub's configured coordinates via OpenStreetMap (off by default, manual lookup only, no API key needed), makes every table in the app auto-width its columns to actual content instead of fixed percentages, and removes several unused functions left over from earlier releases.",
+  "dateReleased": "2026-08-01",
+  "releaseNotes": "4.5 adds watchdogs for two scheduling failure modes that could otherwise silently persist until a manual refresh: stuck IP ping scheduling (a person could show Departed despite live positive signals) and stuck Guest Mode expiry (the house could stay marked occupied indefinitely past the timer). Also flags stale evidence explicitly in the dashboard's raw signal columns instead of showing a positive reading with no explanation for why it isn't counted.",
   "documentationLink": "https://github.com/GordonThelander/hubitat-Presence-Manager",
   "communityLink": "https://community.hubitat.com/",
   "apps": [
