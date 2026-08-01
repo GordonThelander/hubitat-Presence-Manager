@@ -1,6 +1,6 @@
 # Presence Manager
 
-**4.5 Beta - Hubitat Elevation household occupancy manager**
+**4.6 Beta - Hubitat Elevation household occupancy manager**
 
 Presence Manager combines multiple presence signals into one reliable household status for Hubitat. It is designed to avoid a false `Away` result when one phone, integration or network check briefly drops out while other evidence still shows someone is home.
 
@@ -44,9 +44,9 @@ Presence Manager is **fast to Home and conservative to Away**:
 
 Once this repository is published, install through Hubitat Package Manager using the repository's `packageManifest.json`, or use Hubitat's manual code installation flow.
 
-## 4.5 beta scope
+## 4.6 beta scope
 
-Carries forward the B4.0 broader beta package (based on the B3.1.42.3 functional baseline). Highlights since 4.0: a Presence Report page showing each user's hours present per calendar day over a rolling 30 day window; an optional Location Lookup line on the main page (reverse-geocodes the hub's configured coordinates via OpenStreetMap, off by default, never looked up automatically); every table in the app auto-widths its columns to content instead of fixed percentages; and watchdogs for two scheduling failure modes (stuck IP ping checks, stuck Guest Mode expiry) that could otherwise silently persist until a manual refresh, plus explicit "stale, not counted" flagging on the dashboard when that happens. See the git history for the detailed per-version changelog. None of this deliberately changes the presence decision logic.
+Carries forward the B4.0 broader beta package (based on the B3.1.42.3 functional baseline). Highlights since 4.0: a Presence Report page showing each user's hours present per calendar day over a rolling 30 day window; an optional Location Lookup line on the main page (reverse-geocodes the hub's configured coordinates via OpenStreetMap, off by default, never looked up automatically); every table in the app auto-widths its columns to content instead of fixed percentages; and watchdogs for two scheduling failure modes (stuck IP ping checks, stuck Guest Mode expiry) that could otherwise silently persist until a manual refresh, plus explicit "stale, not counted" flagging on the dashboard when that happens. 4.6 fixes the advanced diagnostics tables not scrolling properly on mobile, and raises the default "ignore non-IP evidence after N hours" threshold from 12 to 72 hours since Hubitat mobile presence only reports on arrive/depart transitions - a short threshold could flag someone as stale for simply staying home a normal weekend. See the git history for the detailed per-version changelog. None of this deliberately changes the presence decision logic.
 
 ## Beta testing notes
 

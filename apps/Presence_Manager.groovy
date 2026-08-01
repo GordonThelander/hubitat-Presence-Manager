@@ -1,7 +1,7 @@
 /*
  * Presence Manager
  * Namespace: Hubitat Integrations
- * Version: 4.5
+ * Version: 4.6
  * Release: Adds watchdogs for stuck IP ping scheduling and stuck Guest Mode expiry
  * (both single-runIn chains with no backup, the same failure class Hubitat's
  * scheduler is known to occasionally hit), and flags stale evidence explicitly in
@@ -493,8 +493,8 @@ def advancedConfigPage(params = null) {
 
                 input "staleEvidenceHours", "number",
                     title: "Ignore non-IP evidence after this many hours without an event",
-                    description: "Recommended: 12 hours",
-                    defaultValue: 12,
+                    description: "Recommended: 72 hours. Hubitat mobile presence only reports on arrive/depart transitions, not on a repeating schedule, so someone who simply stays home for a normal weekend can go well past 12-24 hours with no new event even though the reading is still accurate - a short threshold here flags that as stale for no real reason. This setting is really a dead-sensor timeout, not a freshness check, so it should stay well above your household's longest normal at-home stretch.",
+                    defaultValue: 72,
                     required: true,
                     submitOnChange: true
             }
@@ -2804,10 +2804,10 @@ Integer guestModeDurationHoursValue() {
 
 Long staleEvidenceHoursValue() {
     try {
-        Integer hours = ((staleEvidenceHours ?: 12) as Integer)
+        Integer hours = ((staleEvidenceHours ?: 72) as Integer)
         return Math.max(0, hours)
     } catch (Throwable ignored) {
-        return 12L
+        return 72L
     }
 }
 
@@ -3441,7 +3441,7 @@ String decisionDetailHtml() {
     out += "</table></div><br/>"
 
     out += "<b>People, phone presence and IP decision inputs</b><br/>"
-    out += "<div class='pm-table-wrap'><table class='pm-scroll-table-wrap'>"
+    out += "<div class='pm-table-wrap'><table class='pm-scroll-table'>"
     out += headerRow(["Person", "Hubitat mobile app geolocation presence sensor", "Configured IP", "Score", "Present", "Evidence", "Ignored"])
     (result.people ?: []).each { Map p ->
         List mobileNames = (p.presenceDevices ?: []).collect { html(it?.displayName ?: "") }.findAll { it }
@@ -3459,7 +3459,7 @@ String decisionDetailHtml() {
     out += "</table></div><br/>"
 
     out += "<b>Third Party Services</b><br/>"
-    out += "<div class='pm-table-wrap'><table class='pm-scroll-table-wrap'>"
+    out += "<div class='pm-table-wrap'><table class='pm-scroll-table'>"
     out += headerRow(["Device", "Status", "Stale", "Evidence"])
     List houseDevices = asList(houseEvidenceSwitches)
     if (houseDevices) {
@@ -3479,7 +3479,7 @@ String decisionDetailHtml() {
     out += "</table></div><br/>"
 
     out += "<b>IP status</b><br/>"
-    out += "<div class='pm-table-wrap'><table class='pm-scroll-table-wrap'>"
+    out += "<div class='pm-table-wrap'><table class='pm-scroll-table'>"
     out += headerRow(["IP", "Result", "Failures", "Rx/Tx", "Loss", "Avg ms", "Last checked", "Error"])
     if (ipMap) {
         ipMap.keySet().sort().each { String ip ->

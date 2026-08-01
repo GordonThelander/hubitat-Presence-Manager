@@ -1,10 +1,10 @@
 {
   "packageName": "Presence Manager",
   "author": "Gordon Thelander",
-  "version": "4.5",
+  "version": "4.6",
   "minimumHEVersion": "2.3.0",
-  "dateReleased": "2026-08-01",
-  "releaseNotes": "4.5 adds watchdogs for two scheduling failure modes that could otherwise silently persist until a manual refresh: stuck IP ping scheduling (a person could show Departed despite live positive signals) and stuck Guest Mode expiry (the house could stay marked occupied indefinitely past the timer). Also flags stale evidence explicitly in the dashboard's raw signal columns instead of showing a positive reading with no explanation for why it isn't counted.",
+  "dateReleased": "2026-08-02",
+  "releaseNotes": "4.6 fixes two issues found after 4.5's stale-evidence flagging shipped: the advanced diagnostics tables didn't scroll properly on mobile (columns wrapped letter-by-letter instead of overflowing), and the default 'ignore non-IP evidence after N hours' threshold (12h) was too short for how Hubitat mobile presence actually behaves - it only reports on arrive/depart transitions, so a normal weekend at home with no transitions could get incorrectly flagged as stale even though the reading was accurate. Default raised to 72 hours; existing installs need to update the saved value manually since defaults don't retroactively apply.",
   "documentationLink": "https://github.com/GordonThelander/hubitat-Presence-Manager",
   "communityLink": "https://community.hubitat.com/",
   "apps": [
