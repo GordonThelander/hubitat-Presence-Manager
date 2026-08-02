@@ -1,7 +1,7 @@
 /*
  * Presence Manager
  * Namespace: Hubitat Integrations
- * Version: 4.6.3
+ * Version: 4.6.4
  * Release: Adds watchdogs for stuck IP ping scheduling and stuck Guest Mode expiry
  * (both single-runIn chains with no backup, the same failure class Hubitat's
  * scheduler is known to occasionally hit), and flags stale evidence explicitly in
@@ -3445,14 +3445,16 @@ String csvField(String value) {
     return v
 }
 
-// Decimal hours, not "hh:mm" - a colon-separated value like "24:00" gets silently
-// reinterpreted by Excel/Sheets/Numbers as a time and redisplayed with a synthetic
-// ":00" seconds component tacked on, since CSV import auto-detects time-shaped
-// text. A plain decimal has no such ambiguity, and is more directly useful for
-// charting anyway, which is the whole point of the export.
-String csvDecimalHours(Long totalMs) {
-    Long totalMinutes = roundedQuarterHourMinutes(totalMs)
-    return String.format("%.2f", totalMinutes / 60.0)
+// Excel/Sheets/Numbers all auto-detect colon-separated text like "24:00" as a time
+// and a plain date-shaped string like "2026-08-01" as a date, then reformat/display
+// it their own way regardless of what the CSV actually said (a synthetic trailing
+// ":00" for seconds on the time; "####" when a date doesn't fit a narrow column, or
+// worse, a locale-dependent day/month swap). Wrapping the value in a ="..." formula
+// is the standard cross-tool trick to force literal text instead - all three treat
+// a cell starting with = as a formula, and one that just returns a quoted string
+// displays and copies as exactly that string, with no reinterpretation.
+String csvForceText(String value) {
+    return "=\"${(value ?: '').toString()}\""
 }
 
 String presenceReportCsvText(List<Map> people, List<Map> visibleRows, Map<String, Long> totalsByKey, String totalLabel) {
@@ -3460,9 +3462,9 @@ String presenceReportCsvText(List<Map> people, List<Map> visibleRows, Map<String
     csv << "Date," << people.collect { Map p -> csvField(p.name ?: "") }.join(",") << "\n"
     visibleRows.each { Map row ->
         Map<String, Long> msValues = row.msValues as Map
-        csv << csvField(row.label as String) << "," << people.collect { Map p -> csvDecimalHours((msValues["person${p.index}"] ?: 0L) as Long) }.join(",") << "\n"
+        csv << csvField(csvForceText(row.label as String)) << "," << people.collect { Map p -> csvField(csvForceText(formatHoursMinutes((msValues["person${p.index}"] ?: 0L) as Long))) }.join(",") << "\n"
     }
-    csv << csvField(totalLabel) << "," << people.collect { Map p -> csvDecimalHours(totalsByKey["person${p.index}"] ?: 0L) }.join(",") << "\n"
+    csv << csvField(csvForceText(totalLabel)) << "," << people.collect { Map p -> csvField(csvForceText(formatHoursMinutes(totalsByKey["person${p.index}"] ?: 0L))) }.join(",") << "\n"
     return csv.toString()
 }
 

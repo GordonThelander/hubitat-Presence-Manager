@@ -1,10 +1,10 @@
 {
   "packageName": "Presence Manager",
   "author": "Gordon Thelander",
-  "version": "4.6.3",
+  "version": "4.6.4",
   "minimumHEVersion": "2.3.0",
   "dateReleased": "2026-08-03",
-  "releaseNotes": "4.6.3 fixes two issues found after 4.6.2 was tested live: the Decision detail table on the Diagnostic Mode page was still wrapping text letter by letter on mobile (a table this fix hadn't touched, using overflow-wrap:anywhere plus word-break:break-word, which lets table auto-layout shrink a column to almost nothing - switched to overflow-wrap:break-word across every affected table style so columns keep a sane minimum width), and the Presence Report's CSV export showed a spurious trailing :00 on hour values in spreadsheet apps (Excel/Sheets auto-detect a colon-separated value like 24:00 as a time and redisplay it with a synthetic seconds component - the CSV now exports decimal hours instead, which is unambiguous and more directly chartable). 4.6.2 extended the Presence Report window from 30 to 90 days and added the CSV export. 4.6.1 fixed the default stale-evidence threshold (raised from 12 to 48 hours).",
+  "releaseNotes": "4.6.4 fixes the Presence Report CSV export properly this time: 4.6.3's switch to decimal hours avoided the spreadsheet auto-reformatting problem but changed the format away from what was wanted. The CSV now keeps HH:MM text exactly as shown on the page, forced literal via a =\"value\" formula cell (the standard trick Excel/Sheets/Numbers all honour to stop them auto-typing a cell's content) - applied to both the hour columns and the Date column, since the same auto-detection was also showing dates as #### in a narrow column. 4.6.3 fixed the Decision detail table still wrapping text letter by letter on mobile after 4.6.1/4.6.2's fixes missed it (different CSS class, same overflow-wrap:anywhere root cause). 4.6.2 extended the Presence Report window from 30 to 90 days and added the CSV export. 4.6.1 fixed the default stale-evidence threshold (raised from 12 to 48 hours).",
   "documentationLink": "https://github.com/GordonThelander/hubitat-Presence-Manager",
   "communityLink": "https://community.hubitat.com/",
   "apps": [
