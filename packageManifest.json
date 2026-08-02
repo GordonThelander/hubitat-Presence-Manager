@@ -1,10 +1,10 @@
 {
   "packageName": "Presence Manager",
   "author": "Gordon Thelander",
-  "version": "4.6.2",
+  "version": "4.6.3",
   "minimumHEVersion": "2.3.0",
-  "dateReleased": "2026-08-02",
-  "releaseNotes": "4.6.2 extends the Presence Report window from 30 to 90 days (actual usable range still depends on the existing 500-row Activity Report retention cap, left unchanged - raise 'Activity report rows to retain' yourself if you want the wider window to fill in further back), adds a CSV export link under the Presence Report table, and attempts a second fix for diagnostics tables not scrolling horizontally on mobile after the 4.6.1 fix proved incomplete. 4.6.1 fixed two issues found after 4.5's stale-evidence flagging shipped: the advanced diagnostics tables didn't scroll properly on mobile, and the default 'ignore non-IP evidence after N hours' threshold (12h) was too short for how Hubitat mobile presence actually behaves - raised to 48 hours.",
+  "dateReleased": "2026-08-03",
+  "releaseNotes": "4.6.3 fixes two issues found after 4.6.2 was tested live: the Decision detail table on the Diagnostic Mode page was still wrapping text letter by letter on mobile (a table this fix hadn't touched, using overflow-wrap:anywhere plus word-break:break-word, which lets table auto-layout shrink a column to almost nothing - switched to overflow-wrap:break-word across every affected table style so columns keep a sane minimum width), and the Presence Report's CSV export showed a spurious trailing :00 on hour values in spreadsheet apps (Excel/Sheets auto-detect a colon-separated value like 24:00 as a time and redisplay it with a synthetic seconds component - the CSV now exports decimal hours instead, which is unambiguous and more directly chartable). 4.6.2 extended the Presence Report window from 30 to 90 days and added the CSV export. 4.6.1 fixed the default stale-evidence threshold (raised from 12 to 48 hours).",
   "documentationLink": "https://github.com/GordonThelander/hubitat-Presence-Manager",
   "communityLink": "https://community.hubitat.com/",
   "apps": [

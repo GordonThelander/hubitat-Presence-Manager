@@ -1,7 +1,7 @@
 /*
  * Presence Manager
  * Namespace: Hubitat Integrations
- * Version: 4.6.2
+ * Version: 4.6.3
  * Release: Adds watchdogs for stuck IP ping scheduling and stuck Guest Mode expiry
  * (both single-runIn chains with no backup, the same failure class Hubitat's
  * scheduler is known to occasionally hit), and flags stale evidence explicitly in
@@ -321,16 +321,21 @@ String responsiveUiCssHtml() {
 
 /* Same auto-width behaviour as pm-scroll-table, but for tables that can hold long
    freeform text (Activity Report detail messages, evidence lists) where forcing
-   nowrap would make the table absurdly wide instead of just wrapping the text. */
+   nowrap would make the table absurdly wide instead of just wrapping the text.
+   overflow-wrap:break-word only breaks a word if there's truly no other way to
+   avoid overflow, and doesn't change how the browser computes the column's
+   minimum content width - overflow-wrap:anywhere (removed here) does change that
+   calculation, which is what let table auto-layout shrink a column down to almost
+   nothing and wrap ordinary short words letter by letter on narrow screens. */
 .pm-scroll-table-wrap { border-collapse:collapse; width:100%; }
-.pm-scroll-table-wrap th, .pm-scroll-table-wrap td { border:1px solid #ddd; padding:4px calc(10px + 1ch); text-align:left; vertical-align:top; white-space:normal; overflow-wrap:anywhere; word-break:break-word; }
+.pm-scroll-table-wrap th, .pm-scroll-table-wrap td { border:1px solid #ddd; padding:4px calc(10px + 1ch); text-align:left; vertical-align:top; white-space:normal; overflow-wrap:break-word; }
 
 /* General-purpose auto-width label:value table (rowHtml/rowHtmlRawValue). The label
    column sizes to its own longest label per table - it can't line up pixel-for-pixel
    with a different table's label column since they're separate <table> elements, but
    within a table it's exact instead of a guessed pixel width. */
 .pm-kv-table { border-collapse:collapse; width:100%; }
-.pm-kv-table td { border:1px solid #ddd; padding:4px calc(4px + 1ch); vertical-align:top; overflow-wrap:anywhere; word-break:break-word; }
+.pm-kv-table td { border:1px solid #ddd; padding:4px calc(4px + 1ch); vertical-align:top; overflow-wrap:break-word; }
 .pm-kv-table td.pm-kv-label { font-weight:bold; white-space:nowrap; }
 
 /* Keep only real action buttons normalised. Do not touch Hubitat card/page layout classes. */
@@ -3440,14 +3445,24 @@ String csvField(String value) {
     return v
 }
 
+// Decimal hours, not "hh:mm" - a colon-separated value like "24:00" gets silently
+// reinterpreted by Excel/Sheets/Numbers as a time and redisplayed with a synthetic
+// ":00" seconds component tacked on, since CSV import auto-detects time-shaped
+// text. A plain decimal has no such ambiguity, and is more directly useful for
+// charting anyway, which is the whole point of the export.
+String csvDecimalHours(Long totalMs) {
+    Long totalMinutes = roundedQuarterHourMinutes(totalMs)
+    return String.format("%.2f", totalMinutes / 60.0)
+}
+
 String presenceReportCsvText(List<Map> people, List<Map> visibleRows, Map<String, Long> totalsByKey, String totalLabel) {
     StringBuilder csv = new StringBuilder()
     csv << "Date," << people.collect { Map p -> csvField(p.name ?: "") }.join(",") << "\n"
     visibleRows.each { Map row ->
         Map<String, Long> msValues = row.msValues as Map
-        csv << csvField(row.label as String) << "," << people.collect { Map p -> formatHoursMinutes((msValues["person${p.index}"] ?: 0L) as Long) }.join(",") << "\n"
+        csv << csvField(row.label as String) << "," << people.collect { Map p -> csvDecimalHours((msValues["person${p.index}"] ?: 0L) as Long) }.join(",") << "\n"
     }
-    csv << csvField(totalLabel) << "," << people.collect { Map p -> formatHoursMinutes(totalsByKey["person${p.index}"] ?: 0L) }.join(",") << "\n"
+    csv << csvField(totalLabel) << "," << people.collect { Map p -> csvDecimalHours(totalsByKey["person${p.index}"] ?: 0L) }.join(",") << "\n"
     return csv.toString()
 }
 
