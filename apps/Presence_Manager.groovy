@@ -1,7 +1,7 @@
 /*
  * Presence Manager
  * Namespace: Hubitat Integrations
- * Version: 4.6.1
+ * Version: 4.6.2
  * Release: Adds watchdogs for stuck IP ping scheduling and stuck Guest Mode expiry
  * (both single-runIn chains with no backup, the same failure class Hubitat's
  * scheduler is known to occasionally hit), and flags stale evidence explicitly in
@@ -275,9 +275,16 @@ String responsiveUiCssHtml() {
     return """
 <style>
 /* Presence Manager responsive UI - keeps desktop tables and switches phones to stacked cards. */
-.pm-desktop { display:block; }
-.pm-mobile { display:none; }
-.pm-table-wrap { width:100%; max-width:100%; overflow-x:auto; }
+.pm-desktop { display:block; min-width:0; }
+.pm-mobile { display:none; min-width:0; }
+/* min-width:0 matters here: if Hubitat's own page layout puts this content inside
+   a flex or grid container anywhere up the ancestor chain, a flex/grid item's
+   default min-width is auto (not 0), which stops it from ever shrinking below the
+   width its content wants - so a wide table inside would just keep growing the
+   ancestor (forcing the whole page to scroll, or clipping) instead of overflowing
+   *this* div the way overflow-x:auto here is meant to. min-width:0 removes that
+   floor so this div, not some ancestor, is what actually becomes scrollable. */
+.pm-table-wrap { display:block; width:100%; max-width:100%; min-width:0; overflow-x:auto; -webkit-overflow-scrolling:touch; }
 /* Standing convention: every table in this app auto-widths its columns to content
    (pm-scroll-table for multi-column data, pm-kv-table for label:value pairs), wrapped
    in pm-table-wrap so a table wider than the screen scrolls horizontally instead of
@@ -433,8 +440,8 @@ def advancedConfigPage(params = null) {
             section("<b>Third Party Services config</b>") {
                 paragraph "Optional whole-house or system-level presence evidence from Google Home, Alexa, SmartThings or similar services mirrored into Hubitat."
                 input "houseEvidenceSwitches", "capability.switch",
-                    title: "Third Party Services - Google Home, Alexa, SmartThings, etc.",
-                    description: "Optional. on = home evidence, off = departed/away evidence. Use this for platform-level services, not per-person evidence.",
+                    title: "Third Party Services switches",
+                    description: "Optional. Google Home, Alexa, SmartThings or similar. on = home evidence, off = departed/away evidence. Use this for platform-level services, not per-person evidence.",
                     multiple: true,
                     required: false,
                     submitOnChange: true
@@ -548,7 +555,7 @@ def advancedConfigPage(params = null) {
 
                 input "historyLimit", "number",
                     title: "Activity report rows to retain",
-                    description: "Recommended: 500",
+                    description: "Recommended: 500. Note: the Presence Report reconstructs each person's Home hours from these same rows, so its usable window is bounded by however much history this setting actually retains - raise this if you want the Presence Report's 90 day window to fill in further back.",
                     defaultValue: 500,
                     required: true,
                     submitOnChange: true
@@ -3225,7 +3232,7 @@ String activityReportHtml() {
 
 // ---------------- Presence report ----------------
 
-Integer presenceReportDayCount() { return 30 }
+Integer presenceReportDayCount() { return 90 }
 
 Long presenceReportDayStartMs(Integer daysAgo) {
     Calendar cal = Calendar.getInstance(location.timeZone)
@@ -3324,9 +3331,12 @@ String formatHoursMinutes(Long totalMs) {
     return "${hours.toString().padLeft(2, '0')}:${minutes.toString().padLeft(2, '0')}"
 }
 
-String presenceReportHtml() {
+// Shared by presenceReportHtml() and the CSV export so both render from exactly
+// the same self-heal/day-window/trim logic instead of two copies that could drift
+// out of sync - the trimming/rounding split was already a real bug here once (4.3.4).
+Map presenceReportData() {
     List<Map> people = personProfiles()
-    if (!people) return responsiveUiCssHtml() + "No users configured yet."
+    if (!people) return [people: [], visibleRows: [], totalsByKey: [:]]
 
     Integer dayCount = presenceReportDayCount()
     Long nowMs = now()
@@ -3392,6 +3402,21 @@ String presenceReportHtml() {
         }
     }
 
+    return [people: people, visibleRows: visibleRows, totalsByKey: totalsByKey]
+}
+
+String presenceReportTotalLabel(Integer visibleRowCount) {
+    return "Total (${visibleRowCount} day${visibleRowCount == 1 ? '' : 's'})"
+}
+
+String presenceReportHtml() {
+    Map data = presenceReportData()
+    List<Map> people = data.people as List<Map>
+    if (!people) return responsiveUiCssHtml() + "No users configured yet."
+    List<Map> visibleRows = data.visibleRows as List<Map>
+    Map<String, Long> totalsByKey = data.totalsByKey as Map
+    String totalLabel = presenceReportTotalLabel(visibleRows.size())
+
     String out = responsiveUiCssHtml()
     out += "<div class='pm-table-wrap'>"
     out += "<table class='pm-scroll-table'>"
@@ -3400,11 +3425,42 @@ String presenceReportHtml() {
         Map<String, Long> msValues = row.msValues as Map
         out += "<tr><td class='pm-date-col'>${html(row.label)}</td>" + people.collect { Map p -> "<td class='pm-hours-col'>${html(formatHoursMinutes((msValues["person${p.index}"] ?: 0L) as Long))}</td>" }.join("") + "</tr>"
     }
-    String totalLabel = "Total (${visibleRows.size()} day${visibleRows.size() == 1 ? '' : 's'})"
     out += "<tr class='pm-total-row'><td class='pm-date-col'>${totalLabel}</td>" + people.collect { Map p -> "<td class='pm-hours-col'>${html(formatHoursMinutes(totalsByKey["person${p.index}"] ?: 0L))}</td>" }.join("") + "</tr>"
     out += "</table>"
     out += "</div>"
+    out += presenceReportCsvLinkHtml(people, visibleRows, totalsByKey, totalLabel)
     return out
+}
+
+String csvField(String value) {
+    String v = (value ?: "").toString()
+    if (v.contains(",") || v.contains("\"") || v.contains("\n")) {
+        return "\"" + v.replace("\"", "\"\"") + "\""
+    }
+    return v
+}
+
+String presenceReportCsvText(List<Map> people, List<Map> visibleRows, Map<String, Long> totalsByKey, String totalLabel) {
+    StringBuilder csv = new StringBuilder()
+    csv << "Date," << people.collect { Map p -> csvField(p.name ?: "") }.join(",") << "\n"
+    visibleRows.each { Map row ->
+        Map<String, Long> msValues = row.msValues as Map
+        csv << csvField(row.label as String) << "," << people.collect { Map p -> formatHoursMinutes((msValues["person${p.index}"] ?: 0L) as Long) }.join(",") << "\n"
+    }
+    csv << csvField(totalLabel) << "," << people.collect { Map p -> formatHoursMinutes(totalsByKey["person${p.index}"] ?: 0L) }.join(",") << "\n"
+    return csv.toString()
+}
+
+// A data: URI download link needs no OAuth/mappings endpoint on the app - the CSV
+// text is embedded directly in the page and the browser saves it locally when
+// tapped. Untested on-hub: whether Hubitat's paragraph() renderer and the mobile
+// app's own browser both preserve a data: href and honour the download attribute
+// is not something that can be confirmed without trying it live.
+String presenceReportCsvLinkHtml(List<Map> people, List<Map> visibleRows, Map<String, Long> totalsByKey, String totalLabel) {
+    if (!people || !visibleRows) return ""
+    String csvText = presenceReportCsvText(people, visibleRows, totalsByKey, totalLabel)
+    String encoded = java.net.URLEncoder.encode(csvText, "UTF-8").replace("+", "%20")
+    return "<div style='margin-top:8px;'><a href='data:text/csv;charset=utf-8,${encoded}' download='presence_report.csv'>Download CSV</a></div>"
 }
 
 String decisionDetailHtml() {

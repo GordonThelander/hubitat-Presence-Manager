@@ -1,10 +1,10 @@
 {
   "packageName": "Presence Manager",
   "author": "Gordon Thelander",
-  "version": "4.6.1",
+  "version": "4.6.2",
   "minimumHEVersion": "2.3.0",
   "dateReleased": "2026-08-02",
-  "releaseNotes": "4.6.1 fixes two issues found after 4.5's stale-evidence flagging shipped: the advanced diagnostics tables didn't scroll properly on mobile (columns wrapped letter-by-letter instead of overflowing), and the default 'ignore non-IP evidence after N hours' threshold (12h) was too short for how Hubitat mobile presence actually behaves - it only reports on arrive/depart transitions, so a normal weekend at home with no transitions could get incorrectly flagged as stale even though the reading was accurate. Default raised to 48 hours; existing installs need to update the saved value manually since defaults don't retroactively apply.",
+  "releaseNotes": "4.6.2 extends the Presence Report window from 30 to 90 days (actual usable range still depends on the existing 500-row Activity Report retention cap, left unchanged - raise 'Activity report rows to retain' yourself if you want the wider window to fill in further back), adds a CSV export link under the Presence Report table, and attempts a second fix for diagnostics tables not scrolling horizontally on mobile after the 4.6.1 fix proved incomplete. 4.6.1 fixed two issues found after 4.5's stale-evidence flagging shipped: the advanced diagnostics tables didn't scroll properly on mobile, and the default 'ignore non-IP evidence after N hours' threshold (12h) was too short for how Hubitat mobile presence actually behaves - raised to 48 hours.",
   "documentationLink": "https://github.com/GordonThelander/hubitat-Presence-Manager",
   "communityLink": "https://community.hubitat.com/",
   "apps": [
