@@ -1,4 +1,4 @@
-# 4.6 - live-hub test plan
+# 4.6.1 - live-hub test plan
 
 Covers two fixes from this session, both found after 4.5 was pushed: the advanced diagnostics
 tables not rendering correctly on mobile, and Gordon's own presence showing "stale, not counted"
@@ -12,8 +12,8 @@ the README beta-scope section for that history.
 2. **Important - this one needs a manual step**: the "Ignore non-IP evidence after this many
    hours without an event" setting on Advanced Configuration -> Weighting and stale evidence is
    a saved value on your existing install, not just a code default. Raising the default in code
-   to 72 does **not** retroactively change what you already have saved. Open that page and set
-   it to 72 (or whatever you'd prefer) yourself, then Save.
+   to 48 does **not** retroactively change what you already have saved. Open that page and set
+   it to 48 (or whatever you'd prefer) yourself, then Save.
 3. No driver changes this round - nothing to touch in Drivers Code.
 
 ---
@@ -30,9 +30,9 @@ the README beta-scope section for that history.
 
 | # | Test | Steps | Expected |
 |---|------|-------|----------|
-| STALETHRESH-01 | New threshold takes effect | After manually updating the setting to 72 per the Setup step above, check Diagnostic Mode | No immediate change expected unless someone was already sitting past the old 12-hour mark - if Gordon's row was showing "stale, not counted" before this update, it should clear back to a normal green "Home" once the setting is saved (no new event needed, since the comparison itself changes) |
-| STALETHRESH-02 | Passive - normal continuous presence | Over the next few days, with no special action, watch whether anyone's presence row flags "stale, not counted" during an ordinary stretch of staying home (evenings, a weekend) | Should not trigger under normal conditions anymore - flagging should now only appear if a presence sensor genuinely produces no event for 3+ days straight |
-| STALETHRESH-03 | Genuinely stale case still catches (regression) | No action needed - this is the same untestable-on-demand case as the original STALE-01 test, just at a longer horizon now | If a presence sensor ever does go silent for 3+ days while still reporting a stale "present" value, the amber flag should still appear - the mechanism itself hasn't changed, only the default number |
+| STALETHRESH-01 | New threshold takes effect | After manually updating the setting to 48 per the Setup step above, check Diagnostic Mode | No immediate change expected unless someone was already sitting past the old 12-hour mark - if Gordon's row was showing "stale, not counted" before this update, it should clear back to a normal green "Home" once the setting is saved (no new event needed, since the comparison itself changes) |
+| STALETHRESH-02 | Passive - normal continuous presence | Over the next few days, with no special action, watch whether anyone's presence row flags "stale, not counted" during an ordinary stretch of staying home (evenings, a weekend) | Should not trigger under normal conditions anymore - flagging should now only appear if a presence sensor genuinely produces no event for 2+ days straight |
+| STALETHRESH-03 | Genuinely stale case still catches (regression) | No action needed - this is the same untestable-on-demand case as the original STALE-01 test, just at a longer horizon now | If a presence sensor ever does go silent for 2+ days while still reporting a stale "present" value, the amber flag should still appear - the mechanism itself hasn't changed, only the default number |
 
 ---
 

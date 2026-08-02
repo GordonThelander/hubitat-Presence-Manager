@@ -1,7 +1,7 @@
 /*
  * Presence Manager
  * Namespace: Hubitat Integrations
- * Version: 4.6
+ * Version: 4.6.1
  * Release: Adds watchdogs for stuck IP ping scheduling and stuck Guest Mode expiry
  * (both single-runIn chains with no backup, the same failure class Hubitat's
  * scheduler is known to occasionally hit), and flags stale evidence explicitly in
@@ -493,8 +493,8 @@ def advancedConfigPage(params = null) {
 
                 input "staleEvidenceHours", "number",
                     title: "Ignore non-IP evidence after this many hours without an event",
-                    description: "Recommended: 72 hours. Hubitat mobile presence only reports on arrive/depart transitions, not on a repeating schedule, so someone who simply stays home for a normal weekend can go well past 12-24 hours with no new event even though the reading is still accurate - a short threshold here flags that as stale for no real reason. This setting is really a dead-sensor timeout, not a freshness check, so it should stay well above your household's longest normal at-home stretch.",
-                    defaultValue: 72,
+                    description: "Recommended: 48 hours. Hubitat mobile presence only reports on arrive/depart transitions, not on a repeating schedule, so someone who simply stays home for a normal weekend can go well past 12-24 hours with no new event even though the reading is still accurate - a short threshold here flags that as stale for no real reason. This setting is really a dead-sensor timeout, not a freshness check, so it should stay well above your household's longest normal at-home stretch.",
+                    defaultValue: 48,
                     required: true,
                     submitOnChange: true
             }
@@ -2804,10 +2804,10 @@ Integer guestModeDurationHoursValue() {
 
 Long staleEvidenceHoursValue() {
     try {
-        Integer hours = ((staleEvidenceHours ?: 72) as Integer)
+        Integer hours = ((staleEvidenceHours ?: 48) as Integer)
         return Math.max(0, hours)
     } catch (Throwable ignored) {
-        return 72L
+        return 48L
     }
 }
 
