@@ -1,6 +1,6 @@
 # Presence Manager
 
-**4.6.4 Beta - Hubitat Elevation household occupancy manager**
+**4.6.5 Beta - Hubitat Elevation household occupancy manager**
 
 Presence Manager combines multiple presence signals into one reliable household status for Hubitat. It is designed to avoid a false `Away` result when one phone, integration or network check briefly drops out while other evidence still shows someone is home.
 
@@ -44,9 +44,9 @@ Presence Manager is **fast to Home and conservative to Away**:
 
 Once this repository is published, install through Hubitat Package Manager using the repository's `packageManifest.json`, or use Hubitat's manual code installation flow.
 
-## 4.6.4 beta scope
+## 4.6.5 beta scope
 
-Carries forward the B4.0 broader beta package (based on the B3.1.42.3 functional baseline). Highlights since 4.0: a Presence Report page showing each user's hours present per calendar day over a rolling 90 day window (30 days prior to 4.6.2); an optional Location Lookup line on the main page (reverse-geocodes the hub's configured coordinates via OpenStreetMap, off by default, never looked up automatically); every table in the app auto-widths its columns to content instead of fixed percentages; and watchdogs for two scheduling failure modes (stuck IP ping checks, stuck Guest Mode expiry) that could otherwise silently persist until a manual refresh, plus explicit "stale, not counted" flagging on the dashboard when that happens. 4.6.1 fixed the default "ignore non-IP evidence after N hours" threshold (12 to 48 hours). 4.6.2 widened the Presence Report to 90 days and added a CSV export link under the Presence Report table. 4.6.3 fixed the Decision detail table still wrapping text letter by letter on mobile (root cause was `overflow-wrap:anywhere` letting table auto-layout collapse a column's minimum width, now `overflow-wrap:break-word` everywhere). 4.6.4 fixed the CSV export twice over: 4.6.3 had switched it to decimal hours to dodge spreadsheet apps auto-reformatting `hh:mm` values, but the export now keeps `hh:mm` text exactly as shown on the page, forced literal via a spreadsheet-formula cell trick so Excel/Sheets/Numbers stop auto-typing it as a time or date. See the git history for the detailed per-version changelog. None of this deliberately changes the presence decision logic.
+Carries forward the B4.0 broader beta package (based on the B3.1.42.3 functional baseline). Highlights since 4.0: a Presence Report page showing each user's hours present per calendar day over a rolling 90 day window (30 days prior to 4.6.2); an optional Location Lookup line on the main page (reverse-geocodes the hub's configured coordinates via OpenStreetMap, off by default, never looked up automatically); every table in the app auto-widths its columns to content instead of fixed percentages; and watchdogs for two scheduling failure modes (stuck IP ping checks, stuck Guest Mode expiry) that could otherwise silently persist until a manual refresh, plus explicit "stale, not counted" flagging on the dashboard when that happens. 4.6.1 fixed the default "ignore non-IP evidence after N hours" threshold (12 to 48 hours). 4.6.2 widened the Presence Report to 90 days and added a CSV export link under the Presence Report table. 4.6.3 fixed the Decision detail table still wrapping text letter by letter on mobile. 4.6.4 fixed the CSV export to keep HH:MM text exactly as shown on the page. 4.6.5 added a Version line under the Advanced Configuration heading, and fixed the Third Party Services picker's description text colliding with its device-picker button by moving the guidance text into its own paragraph before the input. See the git history for the detailed per-version changelog. None of this deliberately changes the presence decision logic.
 
 ## Beta testing notes
 

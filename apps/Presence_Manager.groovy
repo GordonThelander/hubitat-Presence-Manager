@@ -1,7 +1,7 @@
 /*
  * Presence Manager
  * Namespace: Hubitat Integrations
- * Version: 4.6.4
+ * Version: 4.6.5
  * Release: Adds watchdogs for stuck IP ping scheduling and stuck Guest Mode expiry
  * (both single-runIn chains with no backup, the same failure class Hubitat's
  * scheduler is known to occasionally hit), and flags stale evidence explicitly in
@@ -41,6 +41,11 @@ preferences {
     page(name: "presenceReportPage", title: "Presence Report", install: false, uninstall: false)
     page(name: "advancedConfigPage", title: "Advanced Configuration", install: false, uninstall: false)
 }
+
+// Single source of truth for the version shown on Advanced Configuration - keep in
+// sync with the header comment above and packageManifest.json's "version" field
+// when bumping (same three-way sync this project already requires for those two).
+String appVersionText() { return "4.6.5" }
 
 def installed() {
     initialiseState()
@@ -421,6 +426,10 @@ def presenceReportPage(params = null) {
 def advancedConfigPage(params = null) {
     initialiseState()
     return dynamicPage(name: "advancedConfigPage", title: "Advanced Configuration", install: false, uninstall: false) {
+        section {
+            paragraph "<span style='color:#1a73e8;'>Version ${appVersionText()}</span>"
+        }
+
         section("<b>Navigation</b>") {
             href(name: "mainPageLinkFromAdvanced", title: "Back to status dashboard", description: "Return to the operational dashboard.", page: "mainPage")
             href(name: "peoplePageLinkFromAdvanced", title: "Manage Users", description: "Open User Configuration.", page: "peoplePage")
@@ -443,10 +452,16 @@ def advancedConfigPage(params = null) {
 
         if (masterPresenceStatusConfigured()) {
             section("<b>Third Party Services config</b>") {
-                paragraph "Optional whole-house or system-level presence evidence from Google Home, Alexa, SmartThings or similar services mirrored into Hubitat."
+                // Guidance text lives entirely in this paragraph, before the input, rather
+                // than in the input's own description: field. That field renders as part of
+                // the same native widget as the device-picker button below it, and on some
+                // screens the two visually collided - Hubitat owns that internal layout, not
+                // this app, so there's no reliable way to insert spacing inside the widget
+                // itself. Putting the text in its own paragraph before the button guarantees
+                // no overlap, since they're then two separate elements in normal page flow.
+                paragraph "Optional whole-house or system-level presence evidence from Google Home, Alexa, SmartThings or similar services mirrored into Hubitat. on = home evidence, off = departed/away evidence. Use this for platform-level services, not per-person evidence."
                 input "houseEvidenceSwitches", "capability.switch",
                     title: "Third Party Services switches",
-                    description: "Optional. Google Home, Alexa, SmartThings or similar. on = home evidence, off = departed/away evidence. Use this for platform-level services, not per-person evidence.",
                     multiple: true,
                     required: false,
                     submitOnChange: true
