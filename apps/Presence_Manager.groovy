@@ -2,13 +2,9 @@
  * Presence Manager
  * Namespace: Hubitat Integrations
  * Version: 4.6.6
- * Release: Adds watchdogs for stuck IP ping scheduling and stuck Guest Mode expiry
- * (both single-runIn chains with no backup, the same failure class Hubitat's
- * scheduler is known to occasionally hit), and flags stale evidence explicitly in
- * the dashboard's raw signal columns, on top of 4.4. Based on the B4.0 broader
- * beta baseline (B3.1.42.3 functional baseline). See git log for the detailed
- * per-version changelog; non-obvious behaviour is documented inline at the
- * relevant code rather than repeated here.
+ * Based on the B4.0 broader beta baseline (B3.1.42.3 functional baseline). See
+ * git log for the detailed per-version changelog; non-obvious behaviour is
+ * documented inline at the relevant code rather than repeated here.
  *
  * Purpose:
  * - Aggregate household presence from named people, Hubitat mobile geolocation presence devices, phone IP checks, Third Party Services switches and Guest Mode.

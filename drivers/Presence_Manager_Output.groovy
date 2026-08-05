@@ -1,8 +1,9 @@
 /*
  * Presence Manager Output
  * Namespace: Hubitat Integrations
- * Version: 4.5
- * Release: Broader beta package.
+ * Version: 4.6.6
+ * Release: Broader beta package. No driver-specific changes since 4.5 - version
+ * kept in step with the app/manifest per this project's versioning convention.
  *
  * Child driver for the Presence Manager application main status output.
  * on  = occupied / present / contact open / motion active
