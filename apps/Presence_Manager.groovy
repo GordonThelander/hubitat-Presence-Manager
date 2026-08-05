@@ -1,7 +1,7 @@
 /*
  * Presence Manager
  * Namespace: Hubitat Integrations
- * Version: 4.6.5
+ * Version: 4.6.6
  * Release: Adds watchdogs for stuck IP ping scheduling and stuck Guest Mode expiry
  * (both single-runIn chains with no backup, the same failure class Hubitat's
  * scheduler is known to occasionally hit), and flags stale evidence explicitly in
@@ -45,7 +45,7 @@ preferences {
 // Single source of truth for the version shown on Advanced Configuration - keep in
 // sync with the header comment above and packageManifest.json's "version" field
 // when bumping (same three-way sync this project already requires for those two).
-String appVersionText() { return "4.6.5" }
+String appVersionText() { return "4.6.6" }
 
 def installed() {
     initialiseState()
@@ -925,11 +925,19 @@ void evaluateFromSchedule() {
     evaluateOccupancy("scheduled evaluation")
 }
 
+// Was a self-rescheduling runIn chain (each run had to call scheduleEvidenceWatchdog()
+// again to keep going) - exactly the single-point-of-failure pattern this watchdog
+// exists to protect other schedules against. If Hubitat ever dropped that one runIn
+// callback, the watchdog itself died silently, taking down ping-stuck detection,
+// Guest Mode expiry detection AND the periodic evaluateOccupancy() call that would
+// otherwise catch a pending person status change even with no new device events -
+// everything downstream goes quiet at once with nothing left to notice or recover it.
+// runEvery1Minute() registers a persistent recurring job at the platform level
+// instead: it doesn't need to be re-armed by a successful prior run, so one failed
+// or exception-interrupted execution doesn't take the next one down with it.
 void scheduleEvidenceWatchdog() {
     if (!masterPresenceStatusConfigured()) return
-    Integer seconds = evidenceWatchdogSecondsValue()
-    if (seconds <= 0) return
-    runIn(seconds, "evaluateEvidenceWatchdog", [overwrite: true])
+    runEvery1Minute("evaluateEvidenceWatchdog")
 }
 
 @SuppressWarnings("unused")
@@ -937,7 +945,6 @@ void evaluateEvidenceWatchdog() {
     ensurePingScheduleNotStuck()
     ensureGuestModeExpiryNotStuck()
     evaluateOccupancy("evidence watchdog")
-    scheduleEvidenceWatchdog()
 }
 
 // Same failure class as the ping schedule above: three call sites schedule
@@ -2771,10 +2778,6 @@ Integer pingCountValue() {
     try { return ((pingCount ?: "2") as Integer) } catch (Throwable ignored) { return 2 }
 }
 
-Integer evidenceWatchdogSecondsValue() {
-    return 60
-}
-
 Integer ipFailureThresholdValue() {
     try {
         Integer value = ((ipFailureThreshold ?: 2) as Integer)
@@ -3515,6 +3518,7 @@ String decisionDetailHtml() {
     out += rowHtml("Guest Mode timer", atomicState.guestModeUntilText ?: "not active")
     out += rowHtml("Pending action", atomicState.pendingAction ?: "none")
     out += rowHtml("Pending schedule", atomicState.pendingScheduleStatus ?: "")
+    out += rowHtml("Last ping scheduled", atomicState.lastPingScheduled ?: "")
     out += rowHtml("Presence subscriptions", atomicState.presenceSubscriptionSummary ?: "none")
     out += rowHtml("Switch subscriptions", atomicState.switchSubscriptionSummary ?: "none")
     out += rowHtml("Last evidence event", atomicState.lastEvidenceEvent ?: "none")

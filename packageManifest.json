@@ -1,10 +1,10 @@
 {
   "packageName": "Presence Manager",
   "author": "Gordon Thelander",
-  "version": "4.6.5",
+  "version": "4.6.6",
   "minimumHEVersion": "2.3.0",
-  "dateReleased": "2026-08-03",
-  "releaseNotes": "4.6.5 adds a Version line under the Advanced Configuration page heading (so it's checkable on-hub without opening the app's code), and fixes the Third Party Services picker's description text visually colliding with its device-picker button - moved the guidance text into a paragraph before the input instead of the input's own description field, since that field renders as part of the same native widget as the button and Hubitat's internal layout there isn't something this app can adjust directly. 4.6.4 fixed the Presence Report CSV export to keep HH:MM text (forced literal via a spreadsheet-formula cell) after 4.6.3's decimal-hours attempt missed what was actually wanted. 4.6.3 fixed the Decision detail table still wrapping text letter by letter on mobile. 4.6.2 extended the Presence Report window from 30 to 90 days and added the CSV export. 4.6.1 fixed the default stale-evidence threshold (raised from 12 to 48 hours).",
+  "dateReleased": "2026-08-05",
+  "releaseNotes": "4.6.6 fixes a real gap in the 4.5 watchdog design: the evidence watchdog that was built to catch a stuck IP ping schedule and stuck Guest Mode expiry was itself a self-rescheduling runIn chain - the exact single-point-of-failure pattern it existed to protect against. If Hubitat ever dropped that one runIn callback, the watchdog died silently, taking the periodic re-evaluation that catches a person's status change (even with no new device events) down with it - matching a real incident where two people's presence changes went completely unlogged for about 44 hours. Switched to runEvery1Minute(), a platform-managed recurring job that doesn't need to be re-armed by a successful prior run. Also added a 'Last ping scheduled' row to Decision detail, which existed in state but was never actually displayed. 4.6.5 added a Version line to Advanced Configuration and fixed the Third Party Services picker's description text colliding with its button. 4.6.4 fixed the Presence Report CSV export to keep HH:MM text. 4.6.1-4.6.3 covered the stale-evidence threshold and mobile table rendering.",
   "documentationLink": "https://github.com/GordonThelander/hubitat-Presence-Manager",
   "communityLink": "https://community.hubitat.com/",
   "apps": [
