@@ -688,6 +688,17 @@ void initialize(Boolean fromDeferredSetup = false) {
         return
     }
 
+    // Register the watchdog first, before anything else in this method that could
+    // throw and prevent it from ever being reached. Direct hub verification (curl
+    // against installedapp/statusJson) found this job simply wasn't running -
+    // lastEvaluation only ever advanced on the ping's own 120s cycle, never on a
+    // 60s cadence, and the reason string never once showed "evidence watchdog" -
+    // despite scheduleEvidenceWatchdog() being called at the end of this method
+    // exactly as written. Moving it to the top removes the entire class of "some
+    // later statement in initialize() silently blocks this" risk, regardless of
+    // what that statement turns out to be.
+    scheduleEvidenceWatchdog()
+
     // Keep the page action fast. Guest switch creation and first evaluation are deferred
     // so the application switch setup click does not block the UI.
     if (!fromDeferredSetup) schedulePostMasterSetup()
@@ -720,7 +731,6 @@ void initialize(Boolean fromDeferredSetup = false) {
     runIn(4, "evaluateFromSchedule", [overwrite: true])
     if (!fromDeferredSetup) addHistory("initialised", "Presence Manager initialised")
     ensurePendingTransitionScheduled("initialise")
-    scheduleEvidenceWatchdog()
     logInfo("Initialised")
 }
 
@@ -932,7 +942,13 @@ void evaluateFromSchedule() {
 // or exception-interrupted execution doesn't take the next one down with it.
 void scheduleEvidenceWatchdog() {
     if (!masterPresenceStatusConfigured()) return
-    runEvery1Minute("evaluateEvidenceWatchdog")
+    try {
+        runEvery1Minute("evaluateEvidenceWatchdog")
+        atomicState.evidenceWatchdogScheduleStatus = "Registered at ${timestamp()}"
+    } catch (Throwable t) {
+        atomicState.evidenceWatchdogScheduleStatus = "Failed to register at ${timestamp()}: ${t.message}"
+        logWarn(atomicState.evidenceWatchdogScheduleStatus)
+    }
 }
 
 @SuppressWarnings("unused")
@@ -3516,6 +3532,7 @@ String decisionDetailHtml() {
     out += rowHtml("Pending action", atomicState.pendingAction ?: "none")
     out += rowHtml("Pending schedule", atomicState.pendingScheduleStatus ?: "")
     out += rowHtml("Last ping scheduled", atomicState.lastPingScheduled ?: "")
+    out += rowHtml("Evidence watchdog schedule", atomicState.evidenceWatchdogScheduleStatus ?: "")
     out += rowHtml("Presence subscriptions", atomicState.presenceSubscriptionSummary ?: "none")
     out += rowHtml("Switch subscriptions", atomicState.switchSubscriptionSummary ?: "none")
     out += rowHtml("Last evidence event", atomicState.lastEvidenceEvent ?: "none")
