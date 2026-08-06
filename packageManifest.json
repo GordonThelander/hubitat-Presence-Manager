@@ -1,10 +1,10 @@
 {
   "packageName": "Presence Manager",
   "author": "Gordon Thelander",
-  "version": "4.6.6",
+  "version": "1.0.0",
   "minimumHEVersion": "2.3.0",
   "dateReleased": "2026-08-05",
-  "releaseNotes": "4.6.6 fixes a gap in the evidence watchdog itself: it was a self-rescheduling runIn chain, the same single-point-of-failure pattern it was built to protect other schedules against. If Hubitat ever dropped that callback, the watchdog died silently, taking the periodic re-check that catches a person's status change down with it - confirmed by a real incident where two people's presence changes went unlogged for about 44 hours. Switched to a platform-managed runEvery1Minute() job, and added a 'Last ping scheduled' diagnostic row that existed in state but was never shown. See the git history for the full per-version changelog.",
+  "releaseNotes": "1.0.0 is the first stable release of Presence Manager, combining Hubitat mobile geolocation presence, phone IP checks and Third Party Services switches into one reliable household occupancy status. Highlights: fast-to-Home, conservative-to-Away decision logic with configurable arrival/departure delays; a Presence Report page showing each person's hours home per day over a rolling 90 day window, with CSV export; an optional Location Lookup line reverse-geocoding the hub's coordinates via OpenStreetMap (off by default); Guest Mode; and watchdogs that keep IP checks, Guest Mode expiry and periodic evidence re-evaluation from silently stalling. See the git history for the full development changelog.",
   "documentationLink": "https://github.com/GordonThelander/hubitat-Presence-Manager",
   "communityLink": "https://community.hubitat.com/",
   "apps": [

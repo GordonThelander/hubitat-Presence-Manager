@@ -1,6 +1,6 @@
 # Presence Manager
 
-**4.6.6 Beta - Hubitat Elevation household occupancy manager**
+**1.0.0 - Hubitat Elevation household occupancy manager**
 
 Presence Manager combines multiple presence signals into one reliable household status for Hubitat. It is designed to avoid a false `Away` result when one phone, integration or network check briefly drops out while other evidence still shows someone is home.
 
@@ -13,7 +13,7 @@ Presence Manager combines multiple presence signals into one reliable household 
 | Conservative departure logic | Treats positive evidence as Home immediately, but applies configurable failure thresholds and departure delays before committing Away. |
 | Guest Mode | Keeps the household occupied for a timed period when visitors are present, even when normal person evidence is absent. |
 | Unified output | Drives an app-created child device or an existing writable switch / presence device. The child output presents switch, presence, contact and motion states for broad Hubitat compatibility. |
-| Operations and diagnostics | Provides an activity report, manual refresh, configurable notifications, force Home/Away controls, evidence diagnostics and mobile-safe dashboards. |
+| Operations and diagnostics | Provides an activity report, a per-person Presence Report with CSV export, manual refresh, configurable notifications, force Home/Away controls, evidence diagnostics and mobile-safe dashboards. |
 
 ## Decision model
 
@@ -23,6 +23,7 @@ Presence Manager is **fast to Home and conservative to Away**:
 - A phone IP check is useful as local confirmation, not as a sole authoritative proof of absence.
 - Configurable arrival and departure delays reduce flapping from brief geolocation, Wi-Fi or integration inconsistencies.
 - The app rechecks live evidence before committing an Away state, including when an external output device changes.
+- Watchdogs guard against Hubitat's scheduler silently dropping a callback (IP ping checks, Guest Mode expiry and the periodic evidence re-check all use platform-managed recurring jobs rather than a chain that has to re-arm itself).
 
 ## Package contents
 
@@ -42,18 +43,18 @@ Presence Manager is **fast to Home and conservative to Away**:
 5. Configure Third Party Services, notifications, delays and evidence weights as required.
 6. Test with the dashboard's **Refresh data**, **Evaluate now** and **Test Notification** controls before relying on automations.
 
-Once this repository is published, install through Hubitat Package Manager using the repository's `packageManifest.json`, or use Hubitat's manual code installation flow.
+Install through Hubitat Package Manager using this repository's `packageManifest.json`, or use Hubitat's manual code installation flow.
 
-## Beta scope
-
-Carries forward the B4.0 broader beta package (based on the B3.1.42.3 functional baseline). Highlights: a Presence Report page showing each user's hours present per calendar day over a rolling 90 day window, with a CSV export; an optional Location Lookup line on the main page (reverse-geocodes the hub's configured coordinates via OpenStreetMap, off by default, manual lookup only); every table in the app auto-widths its columns to content instead of fixed percentages; and watchdogs for scheduling failure modes (stuck IP ping checks, stuck Guest Mode expiry, and the periodic evidence re-check itself) that could otherwise silently persist until a manual refresh, plus explicit "stale, not counted" flagging on the dashboard when that happens. See the git history for the detailed per-version changelog. None of this deliberately changes the presence decision logic.
-
-## Beta testing notes
+## Usage notes
 
 - Back up your Hubitat hub before installation and avoid using the app as the sole control for safety, security or life-critical automations.
 - Test Home and Away transitions with each enabled evidence source, Guest Mode, manual refresh and the configured departure delay.
 - When raising an issue, include the Hubitat platform version, configured evidence types, expected versus actual result, the relevant Activity Report entries, and any diagnostic output.
 
-## Licence and support
+## License
 
-This project is provided for beta evaluation. Feedback and defect reports should be raised through the GitHub repository's Issues area once published.
+Apache License 2.0 - see [LICENSE](LICENSE).
+
+## Support
+
+Feedback and defect reports should be raised through this repository's Issues area.
