@@ -1,9 +1,8 @@
 /*
  * Presence Manager
  * Namespace: Hubitat Integrations
- * Version: 4.6.6
- * Based on the B4.0 broader beta baseline (B3.1.42.3 functional baseline). See
- * git log for the detailed per-version changelog; non-obvious behaviour is
+ * Version: 4.7.0
+ * See git log for the detailed per-version changelog; non-obvious behaviour is
  * documented inline at the relevant code rather than repeated here.
  *
  * Purpose:
@@ -41,7 +40,7 @@ preferences {
 // Single source of truth for the version shown on Advanced Configuration - keep in
 // sync with the header comment above and packageManifest.json's "version" field
 // when bumping (same three-way sync this project already requires for those two).
-String appVersionText() { return "4.6.6" }
+String appVersionText() { return "4.7.0" }
 
 def installed() {
     initialiseState()
@@ -495,15 +494,15 @@ def advancedConfigPage(params = null) {
 
                 input "ipWeight", "number",
                     title: "IP reachable weight",
-                    description: "Recommended: 70",
-                    defaultValue: 70,
+                    description: "Recommended: 100",
+                    defaultValue: 100,
                     required: true,
                     submitOnChange: true
 
                 input "mobilePresenceWeight", "number",
                     title: "Hubitat mobile geolocation presence weight",
-                    description: "Recommended: 60",
-                    defaultValue: 60,
+                    description: "Recommended: 100",
+                    defaultValue: 100,
                     required: true,
                     submitOnChange: true
 
@@ -689,6 +688,17 @@ void initialize(Boolean fromDeferredSetup = false) {
         return
     }
 
+    // Register the watchdog first, before anything else in this method that could
+    // throw and prevent it from ever being reached. Direct hub verification (curl
+    // against installedapp/statusJson) found this job simply wasn't running -
+    // lastEvaluation only ever advanced on the ping's own 120s cycle, never on a
+    // 60s cadence, and the reason string never once showed "evidence watchdog" -
+    // despite scheduleEvidenceWatchdog() being called at the end of this method
+    // exactly as written. Moving it to the top removes the entire class of "some
+    // later statement in initialize() silently blocks this" risk, regardless of
+    // what that statement turns out to be.
+    scheduleEvidenceWatchdog()
+
     // Keep the page action fast. Guest switch creation and first evaluation are deferred
     // so the application switch setup click does not block the UI.
     if (!fromDeferredSetup) schedulePostMasterSetup()
@@ -721,7 +731,6 @@ void initialize(Boolean fromDeferredSetup = false) {
     runIn(4, "evaluateFromSchedule", [overwrite: true])
     if (!fromDeferredSetup) addHistory("initialised", "Presence Manager initialised")
     ensurePendingTransitionScheduled("initialise")
-    scheduleEvidenceWatchdog()
     logInfo("Initialised")
 }
 
@@ -868,7 +877,7 @@ void externalOutputStateChanged(String state, String reason) {
     String normalised = (state ?: "").toString().toLowerCase()
     if (!(normalised in ["occupied", "empty"])) return
 
-    // B3.1.40: the main status/output device is an output mirror, not authoritative evidence.
+    // The main status/output device is an output mirror, not authoritative evidence.
     // An external off/not-present event on that device must not force Overall Away while any person
     // still has valid presence evidence. Re-run the normal decision engine instead so all user/IP,
     // third-party and Guest Mode evidence is respected, and departure delays still apply.
@@ -933,7 +942,13 @@ void evaluateFromSchedule() {
 // or exception-interrupted execution doesn't take the next one down with it.
 void scheduleEvidenceWatchdog() {
     if (!masterPresenceStatusConfigured()) return
-    runEvery1Minute("evaluateEvidenceWatchdog")
+    try {
+        runEvery1Minute("evaluateEvidenceWatchdog")
+        atomicState.evidenceWatchdogScheduleStatus = "Registered at ${timestamp()}"
+    } catch (Throwable t) {
+        atomicState.evidenceWatchdogScheduleStatus = "Failed to register at ${timestamp()}: ${t.message}"
+        logWarn(atomicState.evidenceWatchdogScheduleStatus)
+    }
 }
 
 @SuppressWarnings("unused")
@@ -2839,8 +2854,8 @@ Long staleEvidenceHoursValue() {
 
 Integer personThreshold() { numericSetting("personPresentThreshold", 60, 0, 100) }
 Integer houseThreshold() { numericSetting("housePresentThreshold", 60, 0, 100) }
-Integer weightIp() { numericSetting("ipWeight", 70, 0, 100) }
-Integer weightMobile() { numericSetting("mobilePresenceWeight", 60, 0, 100) }
+Integer weightIp() { numericSetting("ipWeight", 100, 0, 100) }
+Integer weightMobile() { numericSetting("mobilePresenceWeight", 100, 0, 100) }
 Integer weightHouseSwitch() { numericSetting("houseSwitchWeight", 60, 0, 100) }
 
 Integer numericSetting(String name, Integer defaultValue, Integer min, Integer max) {
@@ -3268,13 +3283,13 @@ String presenceReportDayLabel(Long dayStartMsValue) {
     return new Date(dayStartMsValue).format("yyyy-MM-dd", location.timeZone)
 }
 
-// Rows written before the 4.3 timeMs field existed only have the display "time"
+// Older rows written before the timeMs field existed only have the display "time"
 // string. Parse that back out with the same timezone timestamp() used to write it,
 // rather than dropping those rows - a person who has been continuously Home since
-// before updating to 4.3 has no *new* Home transition to log (recordUserStatusChanges
-// only fires on an actual change), so their only Home event on record may predate
-// timeMs entirely. Without this fallback the report would show 00:00 for them
-// indefinitely, until they next actually leave and come back.
+// before timeMs started being recorded has no *new* Home transition to log
+// (recordUserStatusChanges only fires on an actual change), so their only Home
+// event on record may predate timeMs entirely. Without this fallback the report
+// would show 00:00 for them indefinitely, until they next actually leave and come back.
 Long historyRowTimeMs(Map row) {
     if (row.timeMs != null) {
         try { return row.timeMs as Long } catch (Throwable ignored) { }
@@ -3296,7 +3311,8 @@ Long historyRowTimeMs(Map row) {
 // same "person<index>" dedupeKey, so a report window spanning that deletion can
 // briefly attribute the deleted person's old hours to whoever now occupies that
 // slot. Narrow, known limitation - not fixed here, same root cause as the
-// personStatusSnapshot reindex fixed in 4.1, just not retroactive to old rows.
+// personStatusSnapshot reindex-on-delete elsewhere in this file, just not
+// retroactive to old rows.
 List<Map> personHomeIntervalsMs(String dedupeKey) {
     List<Map> timed = ((atomicState.history ?: []) as List).findAll { Map row ->
         (row.type ?: "") == "user status" && (row.dedupeKey ?: "") == dedupeKey
@@ -3352,7 +3368,8 @@ String formatHoursMinutes(Long totalMs) {
 
 // Shared by presenceReportHtml() and the CSV export so both render from exactly
 // the same self-heal/day-window/trim logic instead of two copies that could drift
-// out of sync - the trimming/rounding split was already a real bug here once (4.3.4).
+// out of sync - a trimming/rounding split between two copies of this logic was
+// already a real bug here once.
 Map presenceReportData() {
     List<Map> people = personProfiles()
     if (!people) return [people: [], visibleRows: [], totalsByKey: [:]]
@@ -3515,6 +3532,7 @@ String decisionDetailHtml() {
     out += rowHtml("Pending action", atomicState.pendingAction ?: "none")
     out += rowHtml("Pending schedule", atomicState.pendingScheduleStatus ?: "")
     out += rowHtml("Last ping scheduled", atomicState.lastPingScheduled ?: "")
+    out += rowHtml("Evidence watchdog schedule", atomicState.evidenceWatchdogScheduleStatus ?: "")
     out += rowHtml("Presence subscriptions", atomicState.presenceSubscriptionSummary ?: "none")
     out += rowHtml("Switch subscriptions", atomicState.switchSubscriptionSummary ?: "none")
     out += rowHtml("Last evidence event", atomicState.lastEvidenceEvent ?: "none")
