@@ -1,7 +1,7 @@
 /*
  * Presence Manager
  * Namespace: Hubitat Integrations
- * Version: 1.0.0
+ * Version: 4.7.0
  * See git log for the detailed per-version changelog; non-obvious behaviour is
  * documented inline at the relevant code rather than repeated here.
  *
@@ -40,7 +40,7 @@ preferences {
 // Single source of truth for the version shown on Advanced Configuration - keep in
 // sync with the header comment above and packageManifest.json's "version" field
 // when bumping (same three-way sync this project already requires for those two).
-String appVersionText() { return "1.0.0" }
+String appVersionText() { return "4.7.0" }
 
 def installed() {
     initialiseState()

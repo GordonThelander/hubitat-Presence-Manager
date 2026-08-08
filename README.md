@@ -1,6 +1,6 @@
 # Presence Manager
 
-**1.0.0 - Hubitat Elevation household occupancy manager**
+**4.7.0 Beta - Hubitat Elevation household occupancy manager**
 
 Presence Manager combines multiple presence signals into one reliable household status for Hubitat. It is designed to avoid a false `Away` result when one phone, integration or network check briefly drops out while other evidence still shows someone is home.
 

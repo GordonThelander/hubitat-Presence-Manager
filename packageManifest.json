@@ -1,10 +1,10 @@
 {
   "packageName": "Presence Manager",
   "author": "Gordon Thelander",
-  "version": "1.0.0",
+  "version": "4.7.0",
   "minimumHEVersion": "2.3.0",
-  "dateReleased": "2026-08-05",
-  "releaseNotes": "1.0.0 is the first stable release of Presence Manager, combining Hubitat mobile geolocation presence, phone IP checks and Third Party Services switches into one reliable household occupancy status. Highlights: fast-to-Home, conservative-to-Away decision logic with configurable arrival/departure delays; a Presence Report page showing each person's hours home per day over a rolling 90 day window, with CSV export; an optional Location Lookup line reverse-geocoding the hub's coordinates via OpenStreetMap (off by default); Guest Mode; and watchdogs that keep IP checks, Guest Mode expiry and periodic evidence re-evaluation from silently stalling. See the git history for the full development changelog.",
+  "dateReleased": "2026-08-08",
+  "releaseNotes": "4.7.0 is a stepping stone toward a 5.0.0 public release: Apache 2.0 licensing added, the README and code comments cleaned of accumulated beta-version scaffolding, and a real reliability fix - the evidence watchdog (added in 4.6.6 to catch a stuck IP ping schedule and stuck Guest Mode expiry) was itself never actually registering on save, confirmed by direct hub state verification, and is now fixed by registering it first thing in initialize() instead of last. Also raises the default IP reachable and mobile geolocation presence weights to 100. Combines Hubitat mobile geolocation presence, phone IP checks and Third Party Services switches into one reliable household occupancy status, with a Presence Report (90 day window, CSV export), optional Location Lookup, and Guest Mode. See the git history for the full development changelog.",
   "documentationLink": "https://github.com/GordonThelander/hubitat-Presence-Manager",
   "communityLink": "https://community.hubitat.com/",
   "apps": [
