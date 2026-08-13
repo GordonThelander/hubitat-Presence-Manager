@@ -1,7 +1,7 @@
 /*
  * Presence Manager Guest Mode Switch
  * Namespace: Hubitat Integrations
- * Version: 4.7.0
+ * Version: 5.0.0
  * Release: No driver-specific changes this round. Version kept in step with the
  * app/manifest per this project's versioning convention.
  *

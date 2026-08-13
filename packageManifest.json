@@ -1,10 +1,10 @@
 {
   "packageName": "Presence Manager",
   "author": "Gordon Thelander",
-  "version": "4.7.0",
+  "version": "5.0.0",
   "minimumHEVersion": "2.3.0",
-  "dateReleased": "2026-08-08",
-  "releaseNotes": "4.7.0 is a stepping stone toward a 5.0.0 public release: Apache 2.0 licensing added, the README and code comments cleaned of accumulated beta-version scaffolding, and a real reliability fix - the evidence watchdog (added in 4.6.6 to catch a stuck IP ping schedule and stuck Guest Mode expiry) was itself never actually registering on save, confirmed by direct hub state verification, and is now fixed by registering it first thing in initialize() instead of last. Also raises the default IP reachable and mobile geolocation presence weights to 100. Combines Hubitat mobile geolocation presence, phone IP checks and Third Party Services switches into one reliable household occupancy status, with a Presence Report (90 day window, CSV export), optional Location Lookup, and Guest Mode. See the git history for the full development changelog.",
+  "dateReleased": "2026-08-09",
+  "releaseNotes": "5.0.0 is the first public release of Presence Manager. It combines Hubitat mobile geolocation presence, phone IP checks and Third Party Services switches into one reliable household occupancy status per person and for the household as a whole, designed to avoid false-Away results when a single signal briefly drops out. Includes a Presence Report (90 day per-person history with CSV export), an optional reverse-geocoded Location Lookup, Guest Mode, and a Diagnostic Mode page showing the exact evidence and reasoning behind every decision. Scheduled checks (IP pings, Guest Mode expiry, periodic evidence review) use platform-managed recurring jobs rather than a chain that has to re-arm itself, so a single missed callback can't quietly stall the whole thing. Built and refined over an extended beta period on the developer's own household hub - see the git history for that development record.",
   "documentationLink": "https://github.com/GordonThelander/hubitat-Presence-Manager",
   "communityLink": "https://community.hubitat.com/",
   "apps": [

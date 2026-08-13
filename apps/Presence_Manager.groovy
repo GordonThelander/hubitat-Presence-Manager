@@ -1,7 +1,7 @@
 /*
  * Presence Manager
  * Namespace: Hubitat Integrations
- * Version: 4.7.0
+ * Version: 5.0.0
  * See git log for the detailed per-version changelog; non-obvious behaviour is
  * documented inline at the relevant code rather than repeated here.
  *
@@ -40,7 +40,7 @@ preferences {
 // Single source of truth for the version shown on Advanced Configuration - keep in
 // sync with the header comment above and packageManifest.json's "version" field
 // when bumping (same three-way sync this project already requires for those two).
-String appVersionText() { return "4.7.0" }
+String appVersionText() { return "5.0.0" }
 
 def installed() {
     initialiseState()
@@ -531,9 +531,9 @@ def advancedConfigPage(params = null) {
 
                 input "pingIntervalSeconds", "enum",
                     title: "IP check interval",
-                    description: "Recommended: 5 minutes for phones.",
+                    description: "Recommended: 2 minutes for phones.",
                     options: ["30":"30 seconds", "60":"1 minute", "120":"2 minutes", "300":"5 minutes", "600":"10 minutes"],
-                    defaultValue: "300",
+                    defaultValue: "120",
                     required: true,
                     submitOnChange: true
 
@@ -2782,7 +2782,7 @@ Integer personCountValue() {
 }
 
 Integer pingIntervalValue() {
-    try { return ((pingIntervalSeconds ?: "300") as Integer) } catch (Throwable ignored) { return 300 }
+    try { return ((pingIntervalSeconds ?: "120") as Integer) } catch (Throwable ignored) { return 120 }
 }
 
 Integer pingCountValue() {
