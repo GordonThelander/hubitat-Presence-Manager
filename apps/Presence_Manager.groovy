@@ -531,23 +531,23 @@ def advancedConfigPage(params = null) {
 
                 input "pingIntervalSeconds", "enum",
                     title: "IP check interval",
-                    description: "Recommended: 2 minutes for phones.",
+                    description: "Recommended: 5 minutes for phones. A shorter interval means more frequent evaluation cycles for the whole app (evidence re-checks, history writes), not just more pings - 5 minutes keeps that overhead modest without meaningfully slowing down departure detection.",
                     options: ["30":"30 seconds", "60":"1 minute", "120":"2 minutes", "300":"5 minutes", "600":"10 minutes"],
-                    defaultValue: "120",
+                    defaultValue: "300",
                     required: true,
                     submitOnChange: true
 
                 input "pingCount", "enum",
                     title: "Ping count per check",
                     options: ["1":"1 ping", "2":"2 pings", "3":"3 pings", "4":"4 pings"],
-                    defaultValue: "2",
+                    defaultValue: "3",
                     required: true,
                     submitOnChange: true
 
                 input "ipFailureThreshold", "number",
                     title: "Consecutive failed IP checks before an IP counts as away",
-                    description: "Recommended: 2-5 when using 5-minute checks.",
-                    defaultValue: 2,
+                    description: "Recommended: 1 when using 5-minute checks - at that interval, waiting for multiple consecutive failures adds real delay to detecting a genuine departure, since each check is already spaced 5 minutes apart. Raise this only if you're using a shorter interval and want more confirmation before counting an IP as away.",
+                    defaultValue: 1,
                     required: true,
                     submitOnChange: true
 
@@ -2782,19 +2782,19 @@ Integer personCountValue() {
 }
 
 Integer pingIntervalValue() {
-    try { return ((pingIntervalSeconds ?: "120") as Integer) } catch (Throwable ignored) { return 120 }
+    try { return ((pingIntervalSeconds ?: "300") as Integer) } catch (Throwable ignored) { return 300 }
 }
 
 Integer pingCountValue() {
-    try { return ((pingCount ?: "2") as Integer) } catch (Throwable ignored) { return 2 }
+    try { return ((pingCount ?: "3") as Integer) } catch (Throwable ignored) { return 3 }
 }
 
 Integer ipFailureThresholdValue() {
     try {
-        Integer value = ((ipFailureThreshold ?: 2) as Integer)
+        Integer value = ((ipFailureThreshold ?: 1) as Integer)
         return Math.max(1, value)
     } catch (Throwable ignored) {
-        return 2
+        return 1
     }
 }
 
