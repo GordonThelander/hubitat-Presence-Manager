@@ -1,7 +1,7 @@
 /*
  * Presence Manager
  * Namespace: Hubitat Integrations
- * Version: 5.0.0
+ * Version: 5.1.0
  * See git log for the detailed per-version changelog; non-obvious behaviour is
  * documented inline at the relevant code rather than repeated here.
  *
@@ -40,7 +40,7 @@ preferences {
 // Single source of truth for the version shown on Advanced Configuration - keep in
 // sync with the header comment above and packageManifest.json's "version" field
 // when bumping (same three-way sync this project already requires for those two).
-String appVersionText() { return "5.0.0" }
+String appVersionText() { return "5.1.0" }
 
 def installed() {
     initialiseState()
@@ -788,7 +788,27 @@ void postMasterPresenceStatusSetup() {
     initialize(true)
 }
 
+// Bump this when adding a new atomicState field to initialiseState() below, so
+// existing installs re-run the sweep once and pick the new field up instead of
+// skipping it forever on the guard.
+Integer stateInitVersion() { return 1 }
+
+// Guarded because every line below is "if null, set a default" - once set, none of
+// them can revert to null, so re-running the whole 39-field sweep on every single
+// evaluateOccupancy() call was pure cost for no benefit. atomicState reads hit
+// storage directly on every access (unlike state, which is cached per execution),
+// and this function sits at the top of the hottest path in the app, so those 39
+// reads were the single largest contributor to its CPU footprint on the hub.
+// The guard lives in atomicState rather than state deliberately: it's guarding
+// atomicState fields, so keeping both in the same store means they can't diverge
+// if one is ever cleared without the other. Costs one read instead of 39.
 void initialiseState() {
+    if (atomicState.stateInitVersion == stateInitVersion()) {
+        initialisePersonCreationState()
+        initialisePersonEditingState()
+        return
+    }
+
     if (atomicState.ipStatus == null) atomicState.ipStatus = [:]
     if (atomicState.evidenceTimes == null) atomicState.evidenceTimes = [:]
     if (atomicState.currentOccupancy == null) atomicState.currentOccupancy = "unknown"
@@ -830,6 +850,7 @@ void initialiseState() {
     if (atomicState.nextPingDueMs == null) atomicState.nextPingDueMs = 0L
     initialisePersonCreationState()
     initialisePersonEditingState()
+    atomicState.stateInitVersion = stateInitVersion()
 }
 
 @SuppressWarnings("unused")
@@ -937,13 +958,23 @@ void evaluateFromSchedule() {
 // Guest Mode expiry detection AND the periodic evaluateOccupancy() call that would
 // otherwise catch a pending person status change even with no new device events -
 // everything downstream goes quiet at once with nothing left to notice or recover it.
-// runEvery1Minute() registers a persistent recurring job at the platform level
+// runEvery5Minutes() registers a persistent recurring job at the platform level
 // instead: it doesn't need to be re-armed by a successful prior run, so one failed
 // or exception-interrupted execution doesn't take the next one down with it.
+//
+// Interval was 1 minute originally, dropped to 5 because this watchdog was by far
+// the app's largest CPU cost on the hub - everything it calls (a full evidence
+// re-evaluation across every person) was running 1,440 times a day. Nothing it
+// guards needs minute-level detection: a dropped ping schedule or a stuck Guest
+// Mode timer is a failure measured in hours, so noticing it within 5 minutes
+// rather than 1 costs nothing real. The ping cycle also calls evaluateOccupancy()
+// on its own schedule, offset from this one, so pending person status changes
+// still get re-checked well inside recordUserStatusChanges()'s departure-hold
+// window rather than only every 5 minutes.
 void scheduleEvidenceWatchdog() {
     if (!masterPresenceStatusConfigured()) return
     try {
-        runEvery1Minute("evaluateEvidenceWatchdog")
+        runEvery5Minutes("evaluateEvidenceWatchdog")
         atomicState.evidenceWatchdogScheduleStatus = "Registered at ${timestamp()}"
     } catch (Throwable t) {
         atomicState.evidenceWatchdogScheduleStatus = "Failed to register at ${timestamp()}: ${t.message}"
@@ -998,7 +1029,7 @@ void ensureGuestModeExpiryNotStuck() {
 // purposes while still displaying its last (now stale) result, and a person can
 // drop toward 0% and show Departed despite the dashboard's raw columns still
 // showing a positive reading, indefinitely, until something forces a fresh sweep.
-// This runs on the existing 60-second evidence watchdog cycle rather than its own
+// This runs on the existing evidence watchdog cycle rather than its own
 // separate runIn chain (which would need the same protection anyway), and only
 // forces a recovery sweep once a ping is overdue by more than one full extra
 // interval, so normal scheduling jitter doesn't trigger it needlessly.
