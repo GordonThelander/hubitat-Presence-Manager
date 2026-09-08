@@ -1,7 +1,7 @@
 /*
  * Presence Manager
  * Namespace: Hubitat Integrations
- * Version: 5.1.0
+ * Version: 5.1.1
  * See git log for the detailed per-version changelog; non-obvious behaviour is
  * documented inline at the relevant code rather than repeated here.
  *
@@ -40,7 +40,7 @@ preferences {
 // Single source of truth for the version shown on Advanced Configuration - keep in
 // sync with the header comment above and packageManifest.json's "version" field
 // when bumping (same three-way sync this project already requires for those two).
-String appVersionText() { return "5.1.0" }
+String appVersionText() { return "5.1.1" }
 
 def installed() {
     initialiseState()
@@ -632,12 +632,19 @@ def peoplePage(params = null) {
                             submitOnChange: true
 
                         paragraph personIpValidationHtml(i)
+                        // submitOnChange must stay true: with it false, picking a device does
+                        // not commit the value to settings, so the Save button's handler reads
+                        // the old (usually empty) value and saves "none configured" - while the
+                        // selection then appears bound on the next render, making it look like
+                        // it saved. That silently broke adding a geolocation device through the
+                        // edit flow; the create flow was unaffected because it binds the saved
+                        // key directly rather than copying an edit key across on save.
                         input presenceSetting, "capability.presenceSensor",
                             title: "Hubitat mobile app geolocation presence sensor for person ${i}",
                             description: "Select the Hubitat mobile app phone geolocation device. Presence is validated when the person is saved.",
                             multiple: false,
                             required: false,
-                            submitOnChange: false
+                            submitOnChange: true
 
                         paragraph personPresenceValidationHtml(i)
 
