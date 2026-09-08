@@ -1,7 +1,7 @@
 /*
  * Presence Manager Output
  * Namespace: Hubitat Integrations
- * Version: 5.0.0
+ * Version: 5.1.0
  * Release: No driver-specific changes this round. Version kept in step with the
  * app/manifest per this project's versioning convention.
  *

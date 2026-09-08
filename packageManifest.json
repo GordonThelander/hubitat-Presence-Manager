@@ -1,10 +1,10 @@
 {
   "packageName": "Presence Manager",
   "author": "Gordon Thelander",
-  "version": "5.0.0",
+  "version": "5.1.0",
   "minimumHEVersion": "2.3.0",
-  "dateReleased": "2026-08-09",
-  "releaseNotes": "5.0.0 is the first public release of Presence Manager. It combines Hubitat mobile geolocation presence, phone IP checks and Third Party Services switches into one reliable household occupancy status per person and for the household as a whole, designed to avoid false-Away results when a single signal briefly drops out. Includes a Presence Report (90 day per-person history with CSV export), an optional reverse-geocoded Location Lookup, Guest Mode, and a Diagnostic Mode page showing the exact evidence and reasoning behind every decision. Scheduled checks (IP pings, Guest Mode expiry, periodic evidence review) use platform-managed recurring jobs rather than a chain that has to re-arm itself, so a single missed callback can't quietly stall the whole thing. Built and refined over an extended beta period on the developer's own household hub - see the git history for that development record.",
+  "dateReleased": "2026-09-07",
+  "releaseNotes": "5.1.0 substantially reduces the app's CPU footprint on the hub. The periodic evidence watchdog now runs every 5 minutes instead of every minute - the failures it guards against (a stalled IP ping schedule, a stuck Guest Mode timer) play out over hours, so minute-level checking bought nothing while multiplying the app's workload fivefold. Internal state initialisation is also now guarded so it runs once rather than re-checking every field on every evaluation cycle. Together these cut the app's routine storage operations by roughly 90 percent, with no change to presence detection behaviour. Also lowers the default IP check interval to 5 minutes and the default consecutive-failure threshold to 1 to match. 5.0.0 was the first public release: it combines Hubitat mobile geolocation presence, phone IP checks and Third Party Services switches into one reliable household occupancy status, designed to avoid false-Away results when a single signal briefly drops out, with a Presence Report (90 day per-person history with CSV export), an optional reverse-geocoded Location Lookup, Guest Mode, and a Diagnostic Mode page showing the exact evidence behind every decision.",
   "documentationLink": "https://github.com/GordonThelander/hubitat-Presence-Manager",
   "communityLink": "https://community.hubitat.com/",
   "apps": [
